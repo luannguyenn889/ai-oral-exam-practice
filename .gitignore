@@ -1,0 +1,30 @@
+# Node / Angular
+node_modules/
+frontend/.angular/
+frontend/dist/
+npm-debug.log*
+
+# Java / Spring Boot
+backend/target/
+*.class
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ai-service/.pytest_cache/
+
+# IDE and local environment
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+!.env.example
+
+# Local data and recordings
+data/
+*.wav
+*.mp3
+*.m4a
