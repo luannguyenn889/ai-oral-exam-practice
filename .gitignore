@@ -2,6 +2,7 @@
 node_modules/
 frontend/.angular/
 frontend/dist/
+frontend/.npm-cache/
 npm-debug.log*
 
 # Java / Spring Boot
