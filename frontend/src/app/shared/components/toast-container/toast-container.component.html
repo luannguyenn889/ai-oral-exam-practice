@@ -1,0 +1,33 @@
+<div class="toast-container" aria-live="polite">
+  @if (toastService.toasts$ | async; as toasts) {
+    @for (toast of toasts; track toast.id) {
+      <div class="toast-item toast-item--{{ toast.type }}" role="alert">
+        <span class="material-symbols-outlined toast-icon">
+          @switch (toast.type) {
+            @case ('success') {
+              check_circle
+            }
+            @case ('warning') {
+              warning
+            }
+            @case ('danger') {
+              error
+            }
+            @case ('info') {
+              info
+            }
+          }
+        </span>
+        <span class="toast-message">{{ toast.message }}</span>
+        <button
+          type="button"
+          class="toast-close"
+          (click)="toastService.dismiss(toast.id)"
+          aria-label="Đóng thông báo"
+        >
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+    }
+  }
+</div>

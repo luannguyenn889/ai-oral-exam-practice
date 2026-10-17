@@ -1,0 +1,12 @@
+<div class="empty-state">
+  <div class="empty-state__icon-box">
+    <span class="material-symbols-outlined empty-state__icon">{{ icon }}</span>
+  </div>
+  <h3 class="empty-state__title">{{ title }}</h3>
+  <p class="empty-state__description">{{ description }}</p>
+  @if (actionLabel) {
+    <button type="button" class="btn btn--primary" (click)="action.emit()">
+      {{ actionLabel }}
+    </button>
+  }
+</div>

@@ -1,0 +1,50 @@
+<div class="layout">
+  <header class="header">
+    <div class="header__inner container">
+      <div class="header__brand">
+        <span class="material-symbols-outlined header__logo-icon">record_voice_over</span>
+        <span class="header__title">Ôn Luyện Vấn Đáp AI</span>
+        <span class="header__role-tag">Sinh viên</span>
+      </div>
+
+      <nav class="nav">
+        <a routerLink="/student/dashboard" routerLinkActive="nav__link--active" class="nav__link">
+          <span class="material-symbols-outlined">dashboard</span>
+          <span>Tổng quan</span>
+        </a>
+        <a routerLink="/student/courses" routerLinkActive="nav__link--active" class="nav__link">
+          <span class="material-symbols-outlined">menu_book</span>
+          <span>Học phần & Câu hỏi</span>
+        </a>
+        <a routerLink="/student/history" routerLinkActive="nav__link--active" class="nav__link">
+          <span class="material-symbols-outlined">history</span>
+          <span>Lịch sử luyện tập</span>
+        </a>
+      </nav>
+
+      @if (authService.currentUser$ | async; as user) {
+        <div class="user-box">
+          <div class="user-info">
+            <span class="user-name">{{ user.name }}</span>
+            <span class="user-email">{{ user.email }}</span>
+          </div>
+          <a routerLink="/login" class="btn btn--ghost btn--sm" title="Đổi vai trò hoặc đăng xuất">
+            <span class="material-symbols-outlined">logout</span>
+          </a>
+        </div>
+      }
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="container">
+      <router-outlet></router-outlet>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <p>© 2026 Hệ Thống Ôn Luyện Vấn Đáp Tích Hợp AI. Sản phẩm phục vụ Đồ án NCKH.</p>
+    </div>
+  </footer>
+</div>

@@ -1,0 +1,17 @@
+<div class="error-page">
+  <div class="card error-page-card">
+    <span class="material-symbols-outlined error-page-icon">sentiment_dissatisfied</span>
+    <h1 class="error-page-title">Đã xảy ra sự cố</h1>
+    <p class="error-page-desc">
+      Hệ thống gặp sự cố ngoài dự kiến trong khi xử lý yêu cầu của bạn. Vui lòng thử tải lại trang
+      hoặc liên hệ quản trị viên nếu vấn đề tiếp diễn.
+    </p>
+    <div class="error-page-actions">
+      <button type="button" class="btn btn--primary" (click)="reload()">
+        <span class="material-symbols-outlined">refresh</span>
+        Tải lại trang
+      </button>
+      <a routerLink="/student/dashboard" class="btn btn--secondary"> Về trang chủ </a>
+    </div>
+  </div>
+</div>

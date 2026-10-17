@@ -1,0 +1,57 @@
+.score-display {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+
+  &__number {
+    font-weight: 700;
+  }
+
+  &__separator {
+    margin: 0 2px;
+    opacity: 0.5;
+    font-weight: 400;
+  }
+
+  &__max {
+    font-weight: 500;
+    opacity: 0.7;
+  }
+
+  /* Color variants based on item 2.3 */
+  &--success {
+    color: var(--color-success);
+  }
+  &--warning {
+    color: var(--color-warning);
+  }
+  &--danger {
+    color: var(--color-danger);
+  }
+
+  /* Sizes */
+  &--display {
+    font-size: var(--text-display);
+    line-height: var(--text-display-lh);
+    &__max {
+      font-size: 1.5rem;
+    }
+  }
+
+  &--md {
+    font-size: var(--text-h2);
+    line-height: var(--text-h2-lh);
+    &__max {
+      font-size: var(--text-h3);
+    }
+  }
+
+  &--sm {
+    font-size: var(--text-body);
+    line-height: var(--text-body-lh);
+    &__max {
+      font-size: var(--text-sm);
+    }
+  }
+}

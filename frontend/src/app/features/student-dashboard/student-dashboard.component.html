@@ -1,0 +1,106 @@
+<div class="dashboard">
+  <div class="dashboard-header">
+    <div>
+      <h1 class="page-title">Không gian ôn luyện vấn đáp</h1>
+      <p class="page-subtitle">
+        Chọn học phần hoặc luyện tập các câu hỏi mẫu để AI chấm điểm và nhận xét chi tiết.
+      </p>
+    </div>
+    <a routerLink="/student/courses" class="btn btn--primary">
+      <span class="material-symbols-outlined">play_arrow</span>
+      Bắt đầu luyện tập
+    </a>
+  </div>
+
+  <div class="dashboard-grid">
+    <section class="section">
+      <div class="section__header">
+        <h2 class="section__title">Học phần của bạn</h2>
+        <a routerLink="/student/courses" class="section__link">Xem tất cả</a>
+      </div>
+
+      @if (loadingCourses) {
+        <div class="grid-cards">
+          <app-skeleton variant="card"></app-skeleton>
+          <app-skeleton variant="card"></app-skeleton>
+        </div>
+      } @else {
+        <div class="grid-cards">
+          @for (course of courses; track course.id) {
+            <div class="card course-card">
+              <div class="course-card__badge">{{ course.code }}</div>
+              <h3 class="course-card__title">{{ course.name }}</h3>
+              <p class="course-card__desc">{{ course.description }}</p>
+              <div class="course-card__footer">
+                <span class="course-card__count">
+                  <span class="material-symbols-outlined">quiz</span>
+                  {{ course.questionCount }} câu hỏi
+                </span>
+                <a
+                  [routerLink]="['/student/courses', course.id, 'questions']"
+                  class="btn btn--secondary btn--sm"
+                >
+                  Vào luyện tập
+                </a>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="section">
+      <div class="section__header">
+        <h2 class="section__title">Phiên luyện tập gần đây</h2>
+        <a routerLink="/student/history" class="section__link">Xem lịch sử</a>
+      </div>
+
+      @if (loadingHistory) {
+        <div class="card">
+          <app-skeleton variant="text"></app-skeleton>
+          <app-skeleton variant="text"></app-skeleton>
+          <app-skeleton variant="text"></app-skeleton>
+        </div>
+      } @else {
+        @if (recentSessions.length === 0) {
+          <div class="card empty-card">
+            <p>Bạn chưa có phiên luyện tập nào. Hãy chọn một câu hỏi để bắt đầu!</p>
+          </div>
+        } @else {
+          <div class="card history-list">
+            @for (session of recentSessions; track session.id) {
+              <div class="history-item">
+                <div class="history-item__main">
+                  <h4 class="history-item__title">
+                    {{ session.questionTitle }}
+                  </h4>
+                  <div class="history-item__meta">
+                    <app-status-badge [status]="session.status"></app-status-badge>
+                    <span class="history-item__time">{{
+                      session.createdAt | date: 'dd/MM/yyyy HH:mm'
+                    }}</span>
+                  </div>
+                </div>
+
+                @if (session.evaluation) {
+                  <app-score-display
+                    [score]="session.evaluation.totalScore"
+                    [maxScore]="session.evaluation.maxScore"
+                    size="sm"
+                  ></app-score-display>
+                }
+
+                <a
+                  [routerLink]="['/student/sessions', session.id, 'result']"
+                  class="btn btn--ghost btn--sm"
+                >
+                  Xem lại
+                </a>
+              </div>
+            }
+          </div>
+        }
+      }
+    </section>
+  </div>
+</div>

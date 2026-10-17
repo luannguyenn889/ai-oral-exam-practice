@@ -1,0 +1,109 @@
+<div class="courses-page">
+  <!-- Header -->
+  <header class="page-header">
+    <div class="page-header__content">
+      <span class="page-header__badge">
+        <span class="material-symbols-outlined">school</span>
+        Kỳ thi vấn đáp AI
+      </span>
+      <h1 class="page-header__title">Danh sách học phần ôn luyện</h1>
+      <p class="page-header__subtitle">
+        Lựa chọn học phần bạn muốn ôn thi. Hệ thống cung cấp câu hỏi theo từng chủ đề cùng tiêu chí
+        chấm (Rubric) chi tiết để AI phân tích và phản hồi.
+      </p>
+    </div>
+  </header>
+
+  <!-- Filter & Search Bar -->
+  <div class="filter-bar">
+    <div class="filter-bar__search">
+      <span class="material-symbols-outlined search-icon">search</span>
+      <input
+        type="text"
+        placeholder="Tìm kiếm theo mã học phần, tên môn học, giảng viên..."
+        [value]="searchQuery"
+        (input)="onSearchInput($event)"
+      />
+      @if (searchQuery) {
+        <button type="button" class="clear-btn" (click)="clearSearch()" aria-label="Xóa tìm kiếm">
+          <span class="material-symbols-outlined">cancel</span>
+        </button>
+      }
+    </div>
+
+    <div class="filter-bar__actions">
+      <span class="filter-bar__meta"> Hiển thị {{ filteredCourses.length }} học phần </span>
+    </div>
+  </div>
+
+  <!-- Content States -->
+  @if (loading) {
+    <!-- Skeleton Loading State theo muc 6.2 QUY_TAC_THIET_KE_FE.md -->
+    <div class="courses-grid">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <!-- Error State theo muc 6.4 QUY_TAC_THIET_KE_FE.md -->
+    <app-error-state
+      title="Không thể tải danh sách học phần"
+      [message]="error"
+      (retry)="loadCourses()"
+    ></app-error-state>
+  } @else if (filteredCourses.length === 0) {
+    <!-- Empty State theo muc 6.3 QUY_TAC_THIET_KE_FE.md -->
+    <app-empty-state
+      icon="search_off"
+      [title]="searchQuery ? 'Không tìm thấy kết quả phù hợp' : 'Chưa có học phần nào'"
+      [description]="emptyStateDescription"
+      [actionLabel]="searchQuery ? 'Xóa bộ lọc tìm kiếm' : undefined"
+      (action)="clearSearch()"
+    ></app-empty-state>
+  } @else {
+    <!-- Course Cards Grid -->
+    <div class="courses-grid">
+      @for (course of filteredCourses; track course.id) {
+        <div class="course-card">
+          <div>
+            <div class="course-card__header">
+              <span class="course-card__code">{{ course.code }}</span>
+              @if (course.instructorName) {
+                <span class="course-card__instructor">
+                  <span class="material-symbols-outlined">person</span>
+                  {{ course.instructorName }}
+                </span>
+              }
+            </div>
+
+            <h2 class="course-card__title">{{ course.name }}</h2>
+            <p class="course-card__desc">{{ course.description }}</p>
+
+            @if (course.topics && course.topics.length > 0) {
+              <div class="course-card__topics">
+                @for (topic of course.topics; track topic) {
+                  <span class="course-card__topic-tag">{{ topic }}</span>
+                }
+              </div>
+            }
+          </div>
+
+          <div class="course-card__footer">
+            <span class="course-card__count">
+              <span class="material-symbols-outlined">quiz</span>
+              {{ course.questionCount }} câu hỏi
+            </span>
+            <a
+              [routerLink]="['/student/courses', course.id, 'questions']"
+              class="btn btn--primary btn--sm"
+            >
+              Chọn câu hỏi
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </a>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

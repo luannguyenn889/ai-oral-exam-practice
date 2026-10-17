@@ -1,0 +1,7 @@
+<span class="badge badge--{{ colorVariant }}">
+  <span class="badge__dot" [class.badge__dot--pulse]="isPulse"></span>
+  @if (iconName) {
+    <span class="material-symbols-outlined badge__icon">{{ iconName }}</span>
+  }
+  <span class="badge__label">{{ statusLabel }}</span>
+</span>

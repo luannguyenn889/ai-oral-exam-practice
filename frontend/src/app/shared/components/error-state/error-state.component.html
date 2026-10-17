@@ -1,0 +1,11 @@
+<div class="error-state" role="alert">
+  <div class="error-state__icon-box">
+    <span class="material-symbols-outlined error-state__icon">error</span>
+  </div>
+  <h3 class="error-state__title">{{ title }}</h3>
+  <p class="error-state__message">{{ message }}</p>
+  <button type="button" class="btn btn--secondary" (click)="retry.emit()">
+    <span class="material-symbols-outlined">refresh</span>
+    {{ retryLabel }}
+  </button>
+</div>

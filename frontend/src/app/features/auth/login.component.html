@@ -1,0 +1,67 @@
+<div class="login-page">
+  <div class="login-card card">
+    <div class="login-card__header">
+      <div class="login-card__icon-box">
+        <span class="material-symbols-outlined login-card__icon">school</span>
+      </div>
+      <h1 class="login-card__title">Hệ Thống Ôn Luyện Vấn Đáp AI</h1>
+      <p class="login-card__desc">
+        Đăng nhập bằng Google hoặc chọn vai trò để trải nghiệm bản demo.
+      </p>
+    </div>
+
+    <section class="google-login" aria-label="Đăng nhập bằng Google">
+      @if (googleClientId) {
+        <div #googleButton class="google-login__button"></div>
+        <p class="google-login__note">Tài khoản Google được đăng nhập vào chế độ demo với quyền sinh viên.</p>
+      } @else {
+        <button type="button" class="google-login__unconfigured" disabled>
+          <span class="google-mark" aria-hidden="true">G</span>
+          <span>Đăng nhập bằng Google</span>
+        </button>
+        <p class="google-login__note">
+          Thêm Google OAuth Client ID vào <code>environment.development.ts</code> để bật đăng nhập.
+        </p>
+      }
+    </section>
+
+    <div class="login-divider"><span>Hoặc dùng tài khoản demo</span></div>
+
+    <div class="role-selection">
+      <button type="button" class="role-card role-card--student" (click)="selectRole('student')">
+        <div class="role-card__icon-circle">
+          <span class="material-symbols-outlined">person</span>
+        </div>
+        <div class="role-card__content">
+          <span class="role-card__title">Sinh viên</span>
+          <span class="role-card__desc"
+            >Chọn câu hỏi, ghi âm bài làm, nhận xét và chấm điểm AI</span
+          >
+        </div>
+        <span class="material-symbols-outlined role-card__arrow">arrow_forward</span>
+      </button>
+
+      <button
+        type="button"
+        class="role-card role-card--instructor"
+        (click)="selectRole('instructor')"
+      >
+        <div class="role-card__icon-circle">
+          <span class="material-symbols-outlined">psychology</span>
+        </div>
+        <div class="role-card__content">
+          <span class="role-card__title">Giảng viên</span>
+          <span class="role-card__desc">Quản lý câu hỏi, cấu hình tiêu chí chấm rubric</span>
+        </div>
+        <span class="material-symbols-outlined role-card__arrow">arrow_forward</span>
+      </button>
+    </div>
+
+    <div class="login-card__footer">
+      <span class="material-symbols-outlined info-icon">info</span>
+      <span>
+        Đăng nhập hiện chỉ phục vụ demo ở trình duyệt; backend chưa xác minh Google token hay phân quyền tài khoản.
+      </span>
+    </div>
+  </div>
+</div>

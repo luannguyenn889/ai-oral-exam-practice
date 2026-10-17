@@ -1,0 +1,197 @@
+<div class="questions-page">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="page-header__nav">
+      <a routerLink="/student/courses" class="page-header__back-link">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Danh sách học phần
+      </a>
+      @if (course) {
+        <span class="page-header__badge">{{ course.code }}</span>
+      }
+    </div>
+
+    <h1 class="page-header__title">
+      {{ course ? course.name : 'Ngân hàng câu hỏi ôn tập' }}
+    </h1>
+
+    <p class="page-header__subtitle">
+      {{
+        course
+          ? course.description
+          : 'Chọn câu hỏi bạn muốn luyện tập để bắt đầu phần thi vấn đáp trực tiếp với trợ lý ảo AI.'
+      }}
+    </p>
+  </header>
+
+  <!-- Filter & Search Controls Bar -->
+  <div class="controls-bar">
+    <div class="controls-bar__top">
+      <div class="controls-bar__search">
+        <span class="material-symbols-outlined search-icon">search</span>
+        <input
+          type="text"
+          placeholder="Tìm theo tiêu đề câu hỏi, từ khóa, tag..."
+          [value]="searchQuery"
+          (input)="onSearchInput($event)"
+        />
+        @if (searchQuery) {
+          <button type="button" class="clear-btn" (click)="clearSearch()" aria-label="Xóa tìm kiếm">
+            <span class="material-symbols-outlined">cancel</span>
+          </button>
+        }
+      </div>
+
+      <!-- Độ khó -->
+      <div class="controls-bar__difficulty-filter">
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="selectedDifficulty === 'all'"
+          [class.btn--ghost]="selectedDifficulty !== 'all'"
+          (click)="setDifficulty('all')"
+        >
+          Tất cả
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="selectedDifficulty === 'easy'"
+          [class.btn--ghost]="selectedDifficulty !== 'easy'"
+          (click)="setDifficulty('easy')"
+        >
+          Cơ bản
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="selectedDifficulty === 'medium'"
+          [class.btn--ghost]="selectedDifficulty !== 'medium'"
+          (click)="setDifficulty('medium')"
+        >
+          Trung bình
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="selectedDifficulty === 'hard'"
+          [class.btn--ghost]="selectedDifficulty !== 'hard'"
+          (click)="setDifficulty('hard')"
+        >
+          Nâng cao
+        </button>
+      </div>
+    </div>
+
+    <!-- Chủ đề / Topics Filter -->
+    @if (availableTopics.length > 1) {
+      <div class="controls-bar__topics">
+        @for (topic of availableTopics; track topic) {
+          <button
+            type="button"
+            class="controls-bar__topic-btn"
+            [class.controls-bar__topic-btn--active]="selectedTopic === topic"
+            (click)="setTopic(topic)"
+          >
+            {{ topic }}
+          </button>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Content States -->
+  @if (loading) {
+    <!-- Skeleton Loading State theo muc 6.2 QUY_TAC_THIET_KE_FE.md -->
+    <div class="questions-list">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <!-- Error State theo muc 6.4 QUY_TAC_THIET_KE_FE.md -->
+    <app-error-state
+      title="Không thể tải danh sách câu hỏi"
+      [message]="error"
+      (retry)="loadData()"
+    ></app-error-state>
+  } @else if (filteredQuestions.length === 0) {
+    <!-- Empty State theo muc 6.3 QUY_TAC_THIET_KE_FE.md -->
+    <app-empty-state
+      icon="quiz"
+      [title]="
+        searchQuery || selectedDifficulty !== 'all' || selectedTopic !== 'Tất cả'
+          ? 'Không tìm thấy câu hỏi phù hợp'
+          : 'Chưa có câu hỏi nào'
+      "
+      [description]="
+        searchQuery || selectedDifficulty !== 'all' || selectedTopic !== 'Tất cả'
+          ? 'Không có câu hỏi nào khớp với bộ lọc hiện tại. Vui lòng thử tìm kiếm lại.'
+          : 'Học phần này hiện chưa được giảng viên cập nhật nội dung câu hỏi ôn tập.'
+      "
+      [actionLabel]="
+        searchQuery || selectedDifficulty !== 'all' || selectedTopic !== 'Tất cả'
+          ? 'Đặt lại bộ lọc'
+          : undefined
+      "
+      (action)="resetFilters()"
+    ></app-empty-state>
+  } @else {
+    <!-- Questions List -->
+    <div class="questions-list">
+      @for (q of filteredQuestions; track q.id) {
+        <div class="question-card">
+          <div class="question-card__header">
+            <div class="question-card__meta-left">
+              @if (q.topic) {
+                <span class="question-card__topic">{{ q.topic }}</span>
+              }
+              <span
+                class="question-card__difficulty question-card__difficulty--{{
+                  q.difficulty || 'medium'
+                }}"
+              >
+                {{ getDifficultyLabel(q.difficulty) }}
+              </span>
+            </div>
+
+            <span class="question-card__time">
+              <span class="material-symbols-outlined">timer</span>
+              {{ q.timeLimitSeconds ? q.timeLimitSeconds / 60 + ' phút' : '3 phút' }}
+            </span>
+          </div>
+
+          <h2 class="question-card__title">{{ q.title }}</h2>
+          <p class="question-card__content">{{ q.content }}</p>
+
+          @if (q.tags && q.tags.length > 0) {
+            <div class="question-card__tags">
+              @for (tag of q.tags; track tag) {
+                <span class="question-card__tag">#{{ tag }}</span>
+              }
+            </div>
+          }
+
+          <div class="question-card__footer">
+            <div>
+              @if (q.rubric) {
+                <div class="question-card__rubric-info">
+                  <span class="material-symbols-outlined">checklist</span>
+                  <span>
+                    {{ q.rubric.criteria.length }} tiêu chí chấm Rubric ({{ q.rubric.totalScore }}
+                    điểm tối đa)
+                  </span>
+                </div>
+              }
+            </div>
+
+            <a [routerLink]="['/student/practice', q.id]" class="btn btn--primary">
+              <span class="material-symbols-outlined">mic</span>
+              Bắt đầu luyện tập
+            </a>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
