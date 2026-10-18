@@ -1,0 +1,10 @@
+<aside class="app-sidebar" [class.app-sidebar--instructor]="role === 'instructor'" [class.app-sidebar--admin]="role === 'admin'">
+  <nav class="app-sidebar__nav" aria-label="Điều hướng chính">
+    @for (item of items; track item.path) {
+      <a [routerLink]="item.path" routerLinkActive="app-sidebar__link--active" class="app-sidebar__link">
+        <span class="material-symbols-outlined">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
+      </a>
+    }
+  </nav>
+</aside>

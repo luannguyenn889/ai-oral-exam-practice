@@ -18,8 +18,10 @@ export const roleGuard = (allowedRoles: UserRole[]): CanActivateFn => {
       // Chuyển hướng về trang dashboard tương ứng với vai trò thực tế
       if (currentUser.role === 'student') {
         router.navigate(['/student/dashboard']);
-      } else {
+      } else if (currentUser.role === 'instructor') {
         router.navigate(['/instructor/questions']);
+      } else {
+        router.navigate(['/admin/dashboard']);
       }
       return false;
     }

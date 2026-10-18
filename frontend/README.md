@@ -12,6 +12,14 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
+## Login and registration
+
+The `/login` and `/register` pages call the Spring Boot API directly. In development, `src/environments/environment.development.ts` points to `http://localhost:8080/api`; start PostgreSQL and the backend before trying auth.
+
+Registration sends `email`, `fullName`, `password`, and `role`. The role is one of `student`, `instructor` (giáo viên), or `admin`. A successful login or registration stores the returned bearer token and routes to the matching area. The admin area is currently a placeholder page.
+
+`useMock: true` only keeps the practice/course APIs in demo mode; it does not mock login or registration. For production, configure the web server to proxy `/api` to Spring Boot, matching `src/environments/environment.ts`.
+
 ## Code scaffolding
 
 Angular CLI includes powerful code scaffolding tools. To generate a new component, run:

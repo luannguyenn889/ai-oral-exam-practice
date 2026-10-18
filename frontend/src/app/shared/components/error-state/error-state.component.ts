@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './error-state.component.html',
-  styleUrl: './error-state.component.scss',
+  styleUrl: './error-state.component.css',
 })
 export class ErrorStateComponent {
   @Input() title = 'Đã xảy ra lỗi';

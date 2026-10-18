@@ -1,40 +1,59 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject, Observable, map } from 'rxjs';
 import { User, UserRole } from '../../shared/models';
+import { environment } from '../../../environments/environment';
+
+// Khớp với AuthResponse do backend trả về ở /api/auth/login và /api/auth/register.
+interface AuthResponse {
+  accessToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    avatarUrl: string | null;
+    roles: UserRole[];
+  };
+}
+
+interface RegisterPayload {
+  email: string;
+  fullName: string;
+  password: string;
+  role: UserRole;
+}
+
+interface LoginPayload {
+  email: string;
+  password: string;
+}
 
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
-  private readonly STORAGE_KEY = 'oral_exam_demo_user';
+  private readonly USER_STORAGE_KEY = 'oral_exam_user';
+  private readonly TOKEN_STORAGE_KEY = 'oral_exam_access_token';
+  private readonly http = inject(HttpClient);
 
-  private defaultStudent: User = {
-    id: 'user-student-1',
-    name: 'Nguyễn Văn Sinh Viên',
-    email: 'sinhvien@hust.edu.vn',
-    role: 'student',
-  };
-
-  private defaultInstructor: User = {
-    id: 'user-instructor-1',
-    name: 'TS. Nguyễn Văn A (Giảng viên)',
-    email: 'giangvien@hust.edu.vn',
-    role: 'instructor',
-  };
-
-  private currentUserSubject = new BehaviorSubject<User | null>(this.loadInitialUser());
+  private currentUserSubject = new BehaviorSubject<User | null>(this.loadStoredUser());
   public currentUser$: Observable<User | null> = this.currentUserSubject.asObservable();
 
-  private loadInitialUser(): User | null {
-    const raw = localStorage.getItem(this.STORAGE_KEY);
-    if (raw) {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return this.defaultStudent;
-      }
+  private loadStoredUser(): User | null {
+    // Chỉ khôi phục phiên nếu cả user và access token đều còn trong storage.
+    const rawUser = localStorage.getItem(this.USER_STORAGE_KEY);
+    const accessToken = localStorage.getItem(this.TOKEN_STORAGE_KEY);
+    if (!rawUser || !accessToken) return null;
+
+    try {
+      return JSON.parse(rawUser) as User;
+    } catch {
+      localStorage.removeItem(this.USER_STORAGE_KEY);
+      localStorage.removeItem(this.TOKEN_STORAGE_KEY);
+      return null;
     }
-    return this.defaultStudent; // Mặc định chế độ demo là sinh viên
   }
 
   getCurrentUser(): User | null {
@@ -46,29 +65,52 @@ export class AuthService {
   }
 
   isLoggedIn(): boolean {
-    return this.currentUserSubject.value !== null;
+    return this.currentUserSubject.value !== null && this.getAccessToken() !== null;
   }
 
-  setRole(role: UserRole): void {
-    const user = role === 'student' ? this.defaultStudent : this.defaultInstructor;
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(user));
-    this.currentUserSubject.next(user);
+  getAccessToken(): string | null {
+    return localStorage.getItem(this.TOKEN_STORAGE_KEY);
   }
 
-  setGoogleDemoUser(profile: { name: string; email: string; avatarUrl?: string }): void {
+  login(payload: LoginPayload): Observable<User> {
+    return this.http
+      .post<AuthResponse>(`${environment.apiBaseUrl}/auth/login`, payload)
+      .pipe(mapResponseAndStore(this));
+  }
+
+  register(payload: RegisterPayload): Observable<User> {
+    return this.http
+      .post<AuthResponse>(`${environment.apiBaseUrl}/auth/register`, payload)
+      .pipe(mapResponseAndStore(this));
+  }
+
+  // Interceptor dùng hàm này để lưu phiên thành công từ cả hai endpoint auth.
+  storeAuthResponse(response: AuthResponse): User {
+    const role = response.user.roles[0];
+    if (!role || !['student', 'instructor', 'admin'].includes(role)) {
+      throw new Error('Backend trả về vai trò người dùng không hợp lệ.');
+    }
     const user: User = {
-      id: `google-demo-${profile.email.toLowerCase()}`,
-      name: profile.name,
-      email: profile.email,
-      role: 'student',
-      avatarUrl: profile.avatarUrl,
+      id: response.user.id,
+      name: response.user.fullName,
+      email: response.user.email,
+      role,
+      avatarUrl: response.user.avatarUrl ?? undefined,
     };
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(this.TOKEN_STORAGE_KEY, response.accessToken);
     this.currentUserSubject.next(user);
+    return user;
   }
 
   logout(): void {
-    localStorage.removeItem(this.STORAGE_KEY);
+    localStorage.removeItem(this.USER_STORAGE_KEY);
+    localStorage.removeItem(this.TOKEN_STORAGE_KEY);
     this.currentUserSubject.next(null);
   }
+}
+
+// Tách mapping khỏi hai method để login và register dùng cùng một response contract.
+function mapResponseAndStore(authService: AuthService) {
+  return map((response: AuthResponse) => authService.storeAuthResponse(response));
 }

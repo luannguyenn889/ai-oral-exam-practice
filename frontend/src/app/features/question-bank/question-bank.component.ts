@@ -18,7 +18,7 @@ import { ErrorStateComponent } from '../../shared/components/error-state/error-s
     ErrorStateComponent,
   ],
   templateUrl: './question-bank.component.html',
-  styleUrl: './question-bank.component.scss',
+  styleUrl: './question-bank.component.css',
 })
 export class QuestionBankComponent implements OnInit {
   private route = inject(ActivatedRoute);

@@ -1,0 +1,19 @@
+<section class="ai-chat" aria-label="Trợ lý AI">
+  @if (isOpen) {
+    <div class="ai-chat__panel">
+      <div class="ai-chat__heading">
+        <div>
+          <strong>Trợ lý AI</strong>
+          <span>Hỗ trợ ôn luyện vấn đáp</span>
+        </div>
+        <button type="button" class="ai-chat__close" (click)="toggle()" aria-label="Đóng trợ lý">×</button>
+      </div>
+      <p>Giao diện trò chuyện sẽ được kết nối với AI service ở bước tiếp theo.</p>
+    </div>
+  }
+
+  <button type="button" class="ai-chat__toggle" (click)="toggle()" [attr.aria-expanded]="isOpen">
+    <span class="material-symbols-outlined">{{ isOpen ? 'close' : 'chat' }}</span>
+    <span class="ai-chat__toggle-label">{{ isOpen ? 'Đóng' : 'Hỏi AI' }}</span>
+  </button>
+</section>

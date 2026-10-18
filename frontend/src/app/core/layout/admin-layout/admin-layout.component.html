@@ -1,0 +1,15 @@
+<div class="layout-shell">
+  <app-layout-header
+    class="layout-header-slot"
+    title="Quản trị hệ thống"
+    icon="admin_panel_settings"
+    roleLabel="Admin"
+    [role]="role"
+  />
+  <app-layout-sidebar class="layout-sidebar-slot" [items]="navItems" [role]="role" />
+  <main class="layout-content">
+    <router-outlet />
+  </main>
+  <app-layout-footer class="layout-footer-slot" [text]="footerText" />
+  <app-ai-chat-widget />
+</div>

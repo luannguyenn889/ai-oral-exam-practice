@@ -12,7 +12,7 @@ export type PracticeStatus =
   | 'grading_failed'
   | 'cancelled';
 
-export type UserRole = 'student' | 'instructor';
+export type UserRole = 'student' | 'instructor' | 'admin';
 
 export interface User {
   id: string;

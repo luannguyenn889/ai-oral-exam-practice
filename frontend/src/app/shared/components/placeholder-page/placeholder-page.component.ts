@@ -7,7 +7,7 @@ import { RouterModule } from '@angular/router';
   standalone: true,
   imports: [CommonModule, RouterModule],
   templateUrl: './placeholder-page.component.html',
-  styleUrl: './placeholder-page.component.scss',
+  styleUrl: './placeholder-page.component.css',
 })
 export class PlaceholderPageComponent {
   @Input() title = 'Trang chức năng';

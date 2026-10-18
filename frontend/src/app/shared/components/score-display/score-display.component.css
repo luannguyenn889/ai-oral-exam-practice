@@ -1,0 +1,63 @@
+.score-display {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+}
+
+.score-display__number {
+  font-weight: 700;
+}
+
+.score-display__separator {
+  margin: 0 2px;
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+.score-display__max {
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/* Color variants based on item 2.3 */
+.score-display--success {
+  color: var(--color-success);
+}
+
+.score-display--warning {
+  color: var(--color-warning);
+}
+
+.score-display--danger {
+  color: var(--color-danger);
+}
+
+/* Sizes */
+.score-display--display {
+  font-size: var(--text-display);
+  line-height: var(--text-display-lh);
+}
+
+.score-display--display .score-display__max {
+  font-size: 1.5rem;
+}
+
+.score-display--md {
+  font-size: var(--text-h2);
+  line-height: var(--text-h2-lh);
+}
+
+.score-display--md .score-display__max {
+  font-size: var(--text-h3);
+}
+
+.score-display--sm {
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+}
+
+.score-display--sm .score-display__max {
+  font-size: var(--text-sm);
+}
+

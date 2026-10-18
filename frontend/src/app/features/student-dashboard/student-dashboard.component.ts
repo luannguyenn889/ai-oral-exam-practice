@@ -18,7 +18,7 @@ import { ScoreDisplayComponent } from '../../shared/components/score-display/sco
     ScoreDisplayComponent,
   ],
   templateUrl: './student-dashboard.component.html',
-  styleUrl: './student-dashboard.component.scss',
+  styleUrl: './student-dashboard.component.css',
 })
 export class StudentDashboardComponent implements OnInit {
   private practiceApi = inject(PracticeApi);

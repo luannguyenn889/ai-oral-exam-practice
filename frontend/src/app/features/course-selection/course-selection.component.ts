@@ -18,7 +18,7 @@ import { ErrorStateComponent } from '../../shared/components/error-state/error-s
     ErrorStateComponent,
   ],
   templateUrl: './course-selection.component.html',
-  styleUrl: './course-selection.component.scss',
+  styleUrl: './course-selection.component.css',
 })
 export class CourseSelectionComponent implements OnInit {
   private practiceApi = inject(PracticeApi);

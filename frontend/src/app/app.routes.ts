@@ -4,19 +4,25 @@ import { roleGuard } from './core/guards/role.guard';
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'student/dashboard',
+    redirectTo: 'login',
     pathMatch: 'full',
   },
   {
     path: 'login',
-    loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),
+    loadComponent: () =>
+      import('./features/auth/login/login.component').then((m) => m.LoginComponent),
+  },
+  {
+    path: 'register',
+    loadComponent: () =>
+      import('./features/auth/register/register.component').then((m) => m.RegisterComponent),
   },
 
   // Luong Sinh vien
   {
     path: 'student',
     loadComponent: () =>
-      import('./core/layout/student-layout.component').then((m) => m.StudentLayoutComponent),
+      import('./core/layout/student-layout/student-layout.component').then((m) => m.StudentLayoutComponent),
     canActivate: [roleGuard(['student'])],
     children: [
       {
@@ -103,7 +109,7 @@ export const routes: Routes = [
   {
     path: 'instructor',
     loadComponent: () =>
-      import('./core/layout/instructor-layout.component').then((m) => m.InstructorLayoutComponent),
+      import('./core/layout/instructor-layout/instructor-layout.component').then((m) => m.InstructorLayoutComponent),
     canActivate: [roleGuard(['instructor'])],
     children: [
       {
@@ -160,6 +166,33 @@ export const routes: Routes = [
           description:
             'Tạo các tiêu chí đánh giá, thang điểm và hướng dẫn chấm cho AI (Giai đoạn E).',
           icon: 'fact_check',
+        },
+      },
+    ],
+  },
+
+  // Giao diện quản trị hiện là placeholder; route vẫn được bảo vệ theo role admin.
+  {
+    path: 'admin',
+    loadComponent: () =>
+      import('./core/layout/admin-layout/admin-layout.component').then((m) => m.AdminLayoutComponent),
+    canActivate: [roleGuard(['admin'])],
+    children: [
+      {
+        path: '',
+        redirectTo: 'dashboard',
+        pathMatch: 'full',
+      },
+      {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./shared/components/placeholder-page/placeholder-page.component').then(
+            (m) => m.PlaceholderPageComponent,
+          ),
+        data: {
+          title: 'Tổng quan quản trị viên',
+          description: 'Tài khoản đã đăng nhập với quyền quản trị viên.',
+          icon: 'admin_panel_settings',
         },
       },
     ],

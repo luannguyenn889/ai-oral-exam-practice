@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './score-display.component.html',
-  styleUrl: './score-display.component.scss',
+  styleUrl: './score-display.component.css',
 })
 export class ScoreDisplayComponent {
   @Input({ required: true }) score!: number;

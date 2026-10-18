@@ -7,7 +7,7 @@ import { RouterModule } from '@angular/router';
   standalone: true,
   imports: [CommonModule, RouterModule],
   templateUrl: './error-page.component.html',
-  styleUrl: './error-page.component.scss',
+  styleUrl: './error-page.component.css',
 })
 export class ErrorPageComponent {
   reload(): void {

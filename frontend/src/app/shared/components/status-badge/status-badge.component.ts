@@ -7,7 +7,7 @@ import { PracticeStatus } from '../../models';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './status-badge.component.html',
-  styleUrl: './status-badge.component.scss',
+  styleUrl: './status-badge.component.css',
 })
 export class StatusBadgeComponent {
   @Input({ required: true }) status!: PracticeStatus;

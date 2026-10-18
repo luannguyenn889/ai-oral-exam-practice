@@ -47,6 +47,15 @@ cd backend
 mvn spring-boot:run
 ```
 
+Backend mặc định kết nối PostgreSQL tại `localhost:5432/ai_oral_exam_practice`. Tạo database này trước lần chạy đầu. Hibernate dùng `ddl-auto: update` để tạo/cập nhật bảng cho các entity hiện có (`users`, `user_roles`) khi khởi động; SQL sẽ được in trong log backend. Đặt `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` nếu PostgreSQL của bạn dùng cấu hình khác. `backend/src/main/resources/db/schema.sql` chứa schema PostgreSQL đầy đủ; Hibernate chỉ tự tạo bảng tương ứng với entity đã khai báo. Đặt `JWT_SECRET` thành chuỗi bí mật riêng dài ít nhất 32 bytes trước khi triển khai; giá trị mặc định chỉ dành cho chạy local.
+
+### API đăng ký và đăng nhập
+
+- `POST /api/auth/register` với JSON `{"email":"sv@example.com","fullName":"Nguyen Van A","password":"matkhau123","role":"student"}`. `role` nhận `student`, `instructor` (giáo viên) hoặc `admin` và được lưu đúng vào tài khoản.
+- `POST /api/auth/login` với JSON `{"email":"sv@example.com","password":"matkhau123"}`.
+- Cả hai endpoint trả `accessToken`, `tokenType`, `expiresIn` và thông tin user. Gửi token cho các API cần đăng nhập bằng header `Authorization: Bearer <accessToken>`.
+- Email đã tồn tại trả `409`; thông tin đăng nhập sai hoặc tài khoản bị khóa trả `401`; dữ liệu không hợp lệ trả `400`.
+
 ### 3. Frontend
 
 ```powershell

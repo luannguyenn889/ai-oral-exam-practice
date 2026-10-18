@@ -1,0 +1,19 @@
+<header class="app-header" [class.app-header--instructor]="role === 'instructor'" [class.app-header--admin]="role === 'admin'">
+  <div class="app-header__brand">
+    <span class="material-symbols-outlined app-header__icon">{{ icon }}</span>
+    <span class="app-header__title">{{ title }}</span>
+    <span class="app-header__role">{{ roleLabel }}</span>
+  </div>
+
+  @if (authService.currentUser$ | async; as user) {
+    <div class="app-header__account">
+      <div class="app-header__identity">
+        <span class="app-header__name">{{ user.name }}</span>
+        <span class="app-header__email">{{ user.email }}</span>
+      </div>
+      <a routerLink="/login" (click)="authService.logout()" class="btn btn--ghost btn--sm" title="Đăng xuất" aria-label="Đăng xuất">
+        <span class="material-symbols-outlined">logout</span>
+      </a>
+    </div>
+  }
+</header>

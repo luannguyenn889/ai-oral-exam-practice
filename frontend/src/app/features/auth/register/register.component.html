@@ -1,0 +1,58 @@
+<main class="auth-page">
+  <section class="auth-card card" aria-labelledby="register-title">
+    <div class="auth-card__header">
+      <div class="auth-card__icon" aria-hidden="true">
+        <span class="material-symbols-outlined">person_add</span>
+      </div>
+      <p class="auth-card__eyebrow">AI ORAL EXAM PRACTICE</p>
+      <h1 id="register-title">Tạo tài khoản</h1>
+      <p class="auth-card__description">Đăng ký để bắt đầu sử dụng hệ thống.</p>
+    </div>
+
+    <form class="auth-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <label class="auth-field">
+        <span>Họ và tên</span>
+        <input type="text" formControlName="fullName" autocomplete="name" placeholder="Nguyễn Văn A" />
+        @if (form.controls.fullName.touched && form.controls.fullName.invalid) {
+          <small class="auth-field__error">Nhập họ tên từ 2 đến 160 ký tự.</small>
+        }
+      </label>
+
+      <label class="auth-field">
+        <span>Email</span>
+        <input type="email" formControlName="email" autocomplete="email" placeholder="ban@example.com" />
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <small class="auth-field__error">Vui lòng nhập email hợp lệ.</small>
+        }
+      </label>
+
+      <label class="auth-field">
+        <span>Mật khẩu</span>
+        <input type="password" formControlName="password" autocomplete="new-password" placeholder="Ít nhất 8 ký tự" />
+        @if (form.controls.password.touched && form.controls.password.invalid) {
+          <small class="auth-field__error">Mật khẩu cần có ít nhất 8 ký tự.</small>
+        }
+      </label>
+
+      <label class="auth-field">
+        <span>Vai trò</span>
+        <select formControlName="role">
+          @for (role of roles; track role.value) {
+            <option [value]="role.value">{{ role.label }}</option>
+          }
+        </select>
+        <small class="auth-field__hint">Vai trò này sẽ được lưu vào tài khoản của bạn.</small>
+      </label>
+
+      <button class="btn btn--primary auth-submit" type="submit" [disabled]="loading">
+        @if (loading) {
+          <span class="material-symbols-outlined auth-spinner" aria-hidden="true">progress_activity</span>
+        }
+        {{ loading ? 'Đang xử lý...' : 'Đăng ký' }}
+      </button>
+    </form>
+
+    <p class="auth-switch">Đã có tài khoản? <a routerLink="/login">Đăng nhập</a></p>
+    <p class="auth-note">Mật khẩu được xử lý bởi backend và không lưu trên trình duyệt.</p>
+  </section>
+</main>

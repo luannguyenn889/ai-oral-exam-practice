@@ -17,7 +17,7 @@
 
 ## 2. Màu sắc
 
-Khai báo trong `src/styles/_tokens.scss` dưới dạng CSS variables. **Component chỉ dùng biến, không dùng mã màu trực tiếp.**
+Khai báo trong `src/styles/tokens.css` dưới dạng CSS variables. **Component chỉ dùng biến, không dùng mã màu trực tiếp.**
 
 ### 2.1 Màu thương hiệu & trung tính
 
