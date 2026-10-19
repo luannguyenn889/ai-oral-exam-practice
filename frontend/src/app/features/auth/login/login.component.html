@@ -1,40 +1,137 @@
 <main class="auth-page">
-  <section class="auth-card card" aria-labelledby="login-title">
-    <div class="auth-card__header">
-      <div class="auth-card__icon" aria-hidden="true">
-        <span class="material-symbols-outlined">school</span>
+  @if (pendingGoogleUser) {
+    <!-- Giao diện chọn vai trò ở lần đầu đăng nhập bằng Google -->
+    <section class="auth-card card role-select-card" aria-labelledby="role-select-title">
+      <div class="auth-card__header">
+        @if (pendingGoogleUser.avatarUrl) {
+          <img [src]="pendingGoogleUser.avatarUrl" alt="Avatar" class="role-select-avatar" />
+        } @else {
+          <div class="auth-card__icon" aria-hidden="true">
+            <span class="material-symbols-outlined">badge</span>
+          </div>
+        }
+        <p class="auth-card__eyebrow">CHÀO MỪNG BẠN</p>
+        <h1 id="role-select-title">{{ pendingGoogleUser.fullName }}</h1>
+        <p class="auth-card__description">{{ pendingGoogleUser.email }}</p>
       </div>
-      <p class="auth-card__eyebrow">AI ORAL EXAM PRACTICE</p>
-      <h1 id="login-title">Chào mừng trở lại</h1>
-      <p class="auth-card__description">Đăng nhập để tiếp tục ôn luyện.</p>
-    </div>
 
-    <form class="auth-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
-      <label class="auth-field">
-        <span>Email</span>
-        <input type="email" formControlName="email" autocomplete="email" placeholder="ban@example.com" />
-        @if (form.controls.email.touched && form.controls.email.invalid) {
-          <small class="auth-field__error">Vui lòng nhập email hợp lệ.</small>
-        }
-      </label>
+      <div class="role-select-guide">
+        <p class="role-select-guide__text">
+          Đây là lần đầu bạn đăng nhập bằng Google. Vui lòng chọn vai trò của bạn trong hệ thống để tiếp tục:
+        </p>
+      </div>
 
-      <label class="auth-field">
-        <span>Mật khẩu</span>
-        <input type="password" formControlName="password" autocomplete="current-password" placeholder="Mật khẩu" />
-        @if (form.controls.password.touched && form.controls.password.invalid) {
-          <small class="auth-field__error">Vui lòng nhập mật khẩu.</small>
-        }
-      </label>
+      <div class="role-options">
+        <button
+          type="button"
+          class="role-card"
+          [class.role-card--selected]="selectedRole === 'student'"
+          (click)="selectRole('student')"
+        >
+          <div class="role-card__icon">
+            <span class="material-symbols-outlined">school</span>
+          </div>
+          <div class="role-card__info">
+            <strong>Sinh viên</strong>
+            <span>Luyện tập trả lời vấn đáp AI, xem kết quả và cải thiện kỹ năng.</span>
+          </div>
+          <div class="role-card__check">
+            @if (selectedRole === 'student') {
+              <span class="material-symbols-outlined">check_circle</span>
+            }
+          </div>
+        </button>
 
-      <button class="btn btn--primary auth-submit" type="submit" [disabled]="loading">
+        <button
+          type="button"
+          class="role-card"
+          [class.role-card--selected]="selectedRole === 'instructor'"
+          (click)="selectRole('instructor')"
+        >
+          <div class="role-card__icon">
+            <span class="material-symbols-outlined">co_present</span>
+          </div>
+          <div class="role-card__info">
+            <strong>Giảng viên</strong>
+            <span>Quản lý ngân hàng câu hỏi, thiết lập rubric và theo dõi sinh viên.</span>
+          </div>
+          <div class="role-card__check">
+            @if (selectedRole === 'instructor') {
+              <span class="material-symbols-outlined">check_circle</span>
+            }
+          </div>
+        </button>
+      </div>
+
+      <button
+        class="btn btn--primary auth-submit role-submit-btn"
+        type="button"
+        [disabled]="loading || !selectedRole"
+        (click)="confirmRole()"
+      >
         @if (loading) {
           <span class="material-symbols-outlined auth-spinner" aria-hidden="true">progress_activity</span>
         }
-        {{ loading ? 'Đang xử lý...' : 'Đăng nhập' }}
+        {{ loading ? 'Đang kích hoạt tài khoản...' : 'Xác nhận & Bắt đầu' }}
       </button>
-    </form>
 
-    <p class="auth-switch">Chưa có tài khoản? <a routerLink="/register">Tạo tài khoản</a></p>
-    <p class="auth-note">Đăng nhập được xác thực qua backend.</p>
-  </section>
+      <button
+        type="button"
+        class="btn btn--ghost role-cancel-btn"
+        [disabled]="loading"
+        (click)="cancelGoogleLogin()"
+      >
+        Hủy & Đăng nhập tài khoản khác
+      </button>
+    </section>
+  } @else {
+    <!-- Giao diện đăng nhập thông thường -->
+    <section class="auth-card card" aria-labelledby="login-title">
+      <div class="auth-card__header">
+        <div class="auth-card__icon" aria-hidden="true">
+          <span class="material-symbols-outlined">school</span>
+        </div>
+        <p class="auth-card__eyebrow">AI ORAL EXAM PRACTICE</p>
+        <h1 id="login-title">Chào mừng trở lại</h1>
+        <p class="auth-card__description">Đăng nhập để tiếp tục ôn luyện.</p>
+      </div>
+
+      <!-- Đăng nhập nhanh bằng Google -->
+      <div class="google-btn-container">
+        <div #googleBtnRef class="google-btn-target"></div>
+      </div>
+
+      <div class="auth-divider">
+        <span>HOẶC TIẾP TỤC VỚI EMAIL</span>
+      </div>
+
+      <form class="auth-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" formControlName="email" autocomplete="email" placeholder="ban@example.com" />
+          @if (form.controls.email.touched && form.controls.email.invalid) {
+            <small class="auth-field__error">Vui lòng nhập email hợp lệ.</small>
+          }
+        </label>
+
+        <label class="auth-field">
+          <span>Mật khẩu</span>
+          <input type="password" formControlName="password" autocomplete="current-password" placeholder="Mật khẩu" />
+          @if (form.controls.password.touched && form.controls.password.invalid) {
+            <small class="auth-field__error">Vui lòng nhập mật khẩu.</small>
+          }
+        </label>
+
+        <button class="btn btn--primary auth-submit" type="submit" [disabled]="loading">
+          @if (loading) {
+            <span class="material-symbols-outlined auth-spinner" aria-hidden="true">progress_activity</span>
+          }
+          {{ loading ? 'Đang xử lý...' : 'Đăng nhập' }}
+        </button>
+      </form>
+
+      <p class="auth-switch">Chưa có tài khoản? <a routerLink="/register">Tạo tài khoản</a></p>
+      <p class="auth-note">Đăng nhập được xác thực qua backend.</p>
+    </section>
+  }
 </main>

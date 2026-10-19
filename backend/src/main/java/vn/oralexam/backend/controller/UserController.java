@@ -1,6 +1,7 @@
 package vn.oralexam.backend.controller;
 
 import jakarta.validation.Valid;
+import vn.oralexam.backend.DTO.request.GoogleLoginRequest;
 import vn.oralexam.backend.DTO.request.LoginRequest;
 import vn.oralexam.backend.DTO.request.RegisterRequest;
 import vn.oralexam.backend.service.UserService;
@@ -21,14 +22,30 @@ public class UserController {
         this.userService = userService;
     }
 
+    /**
+     * Đăng ký tài khoản người dùng mới bằng email và mật khẩu
+     */
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
         return userService.register(request);
     }
 
+    /**
+     * Đăng nhập truyền thống bằng email và mật khẩu
+     */
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return userService.login(request);
     }
+
+    /**
+     * Đăng nhập / Đăng ký nhanh qua Google ID Token (OAuth2)
+     */
+    @PostMapping("/google")
+    public AuthResponse googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        return userService.loginWithGoogle(request.idToken(), request.role());
+    }
 }
+
+

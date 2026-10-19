@@ -29,5 +29,6 @@ server:
 app:
   auth:
     jwt-secret: ${JWT_SECRET:local-development-only-change-this-secret-before-deployment-2026}
+    google-client-id: ${GOOGLE_CLIENT_ID:569426721711-6ub3hgomi74b201otif6cpe3oq53s5fj.apps.googleusercontent.com}
   ai-service:
     base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}

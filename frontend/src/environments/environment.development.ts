@@ -4,5 +4,5 @@ export const environment = {
   apiBaseUrl: 'http://localhost:8080/api',
   // Chỉ các API nghiệp vụ luyện tập còn dùng mock ở giai đoạn hiện tại.
   useMock: true,
-  googleClientId: '',
+  googleClientId: '569426721711-6ub3hgomi74b201otif6cpe3oq53s5fj.apps.googleusercontent.com',
 };
