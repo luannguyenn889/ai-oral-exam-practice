@@ -1,0 +1,162 @@
+<div class="recorder-page">
+  @if (loading) {
+    <app-skeleton variant="card"></app-skeleton>
+    <app-skeleton variant="card"></app-skeleton>
+  } @else if (error || !question) {
+    <app-error-state
+      title="Không tìm thấy câu hỏi"
+      [message]="error || 'Câu hỏi không tồn tại.'"
+      (retry)="loadQuestion()"
+    ></app-error-state>
+  } @else {
+    <header class="recorder-header">
+      <a
+        [routerLink]="['/student/courses', question.courseId, 'questions']"
+        class="recorder-header__back"
+      >
+        <span class="material-symbols-outlined">arrow_back</span>
+        Quay lại danh sách câu hỏi ({{ question.courseId }})
+      </a>
+
+      <div class="step-indicator">
+        <span class="step-pill step-pill--active">Bước 1: Ghi âm câu trả lời</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill">Bước 2: Xem & Sửa Transcript</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill">Bước 3: Kết quả & Dẫn chứng RAG</span>
+      </div>
+    </header>
+
+    <!-- Thẻ đề bài & Rubric -->
+    <section class="card question-box">
+      <div class="question-box__meta">
+        <span class="question-box__badge">{{ question.courseId }}</span>
+        @if (question.topic) {
+          <span class="question-box__topic">{{ question.topic }}</span>
+        }
+        <span class="question-box__time">
+          <span class="material-symbols-outlined">timer</span>
+          Thời gian gợi ý: {{ (question.timeLimitSeconds || 180) / 60 }} phút
+        </span>
+      </div>
+
+      <h1 class="question-box__title">{{ question.title }}</h1>
+      <blockquote class="question-box__prompt">{{ question.content }}</blockquote>
+
+      @if (question.rubric && question.rubric.criteria.length > 0) {
+        <div class="rubric-preview">
+          <h3 class="rubric-preview__heading">
+            <span class="material-symbols-outlined">fact_check</span>
+            Tiêu chí chấm điểm (Rubric — Thang điểm {{ question.rubric.totalScore }}):
+          </h3>
+          <div class="rubric-preview__grid">
+            @for (c of question.rubric.criteria; track c.id) {
+              <div class="rubric-item">
+                <div class="rubric-item__top">
+                  <strong>{{ c.name }}</strong>
+                  <span class="rubric-item__score">{{ c.maxScore }} điểm</span>
+                </div>
+                <p class="rubric-item__desc">{{ c.description }}</p>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </section>
+
+    <!-- Khu vực thu âm / tải file âm thanh -->
+    <section class="card mic-box">
+      <h2 class="mic-box__title">
+        <span class="material-symbols-outlined">mic</span>
+        Bước 1: Thu âm câu trả lời hoặc Tải file âm thanh
+      </h2>
+      <p class="mic-box__desc">
+        Hệ thống sử dụng <strong>Groq Cloud STT (whisper-large-v3)</strong> kết hợp
+        <strong>Gemini AI</strong> để tự động chuẩn hóa các thuật ngữ chuyên ngành CNTT theo ngữ
+        cảnh đề bài.
+      </p>
+
+      <div class="mic-controls">
+        @if (!isRecording) {
+          <button
+            type="button"
+            class="btn btn--primary btn--lg mic-btn"
+            [disabled]="submitting"
+            (click)="startRecording()"
+          >
+            <span class="material-symbols-outlined">mic</span>
+            Bắt đầu thu âm bằng Microphone
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="btn btn--danger btn--lg mic-btn mic-btn--recording"
+            (click)="stopRecording()"
+          >
+            <span class="material-symbols-outlined">stop_circle</span>
+            Dừng thu âm ({{ formatDuration(recordingSeconds) }})
+          </button>
+        }
+
+        <label class="btn btn--secondary btn--lg">
+          <input
+            type="file"
+            accept=".wav,.mp3,.webm,.m4a,.ogg"
+            [disabled]="isRecording || submitting"
+            (change)="onAudioFileSelected($event)"
+            hidden
+          />
+          <span class="material-symbols-outlined">upload_file</span>
+          Tải file âm thanh (.wav, .mp3, .webm)
+        </label>
+
+        <button
+          type="button"
+          class="btn btn--ghost btn--lg"
+          [disabled]="isRecording || submitting"
+          (click)="useSimulatedRecording()"
+        >
+          <span class="material-symbols-outlined">bolt</span>
+          Dùng thử bản ghi mẫu (Không cần Mic)
+        </button>
+      </div>
+
+      @if (selectedFileName) {
+        <div class="audio-ready-box">
+          <div class="audio-ready-box__info">
+            <span class="material-symbols-outlined">check_circle</span>
+            <div>
+              <strong>Đã sẵn sàng: {{ selectedFileName }}</strong>
+              @if (recordingSeconds > 0) {
+                <span class="audio-ready-box__duration">
+                  · Thời lượng: {{ formatDuration(recordingSeconds) }}
+                </span>
+              }
+            </div>
+          </div>
+
+          @if (audioPreviewUrl) {
+            <audio [src]="audioPreviewUrl" controls class="audio-player"></audio>
+          }
+
+          <button
+            type="button"
+            class="btn btn--primary btn--lg"
+            [disabled]="submitting"
+            (click)="submitAudioAndTranscribe()"
+          >
+            <span class="material-symbols-outlined">
+              {{ submitting ? 'hourglass_top' : 'send' }}
+            </span>
+            {{
+              submitting
+                ? 'Đang nhận dạng giọng nói & chuẩn hóa thuật ngữ CNTT...'
+                : 'Nộp âm thanh & Chuyển thành văn bản (Bước 2)'
+            }}
+          </button>
+        </div>
+      }
+    </section>
+  }
+</div>
+

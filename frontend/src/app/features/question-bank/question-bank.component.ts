@@ -1,6 +1,6 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../data-access/api/practice.api';
 import { Course, Question } from '../../shared/models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -22,6 +22,7 @@ import { ErrorStateComponent } from '../../shared/components/error-state/error-s
 })
 export class QuestionBankComponent implements OnInit {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private practiceApi = inject(PracticeApi);
 
   courseId?: string;
@@ -33,6 +34,10 @@ export class QuestionBankComponent implements OnInit {
   searchQuery = '';
   selectedTopic = 'Tất cả';
   selectedDifficulty = 'all';
+
+  get isInstructorMode(): boolean {
+    return this.router.url.startsWith('/instructor');
+  }
 
   get availableTopics(): string[] {
     const set = new Set<string>();
@@ -61,7 +66,10 @@ export class QuestionBankComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.courseId = this.route.snapshot.paramMap.get('courseId') || undefined;
+    this.courseId =
+      this.route.snapshot.paramMap.get('courseId') ||
+      this.route.snapshot.queryParamMap.get('courseId') ||
+      undefined;
     this.loadData();
   }
 
@@ -69,13 +77,15 @@ export class QuestionBankComponent implements OnInit {
     this.loading = true;
     this.error = null;
 
-    if (this.courseId) {
-      this.practiceApi.getCourses().subscribe({
-        next: (courses) => {
+    this.practiceApi.getCourses().subscribe({
+      next: (courses) => {
+        if (this.courseId) {
           this.course = courses.find((c) => c.id === this.courseId) || null;
-        },
-      });
-    }
+        } else if (courses.length > 0 && this.isInstructorMode) {
+          this.course = courses[0];
+        }
+      },
+    });
 
     this.practiceApi.getQuestions(this.courseId).subscribe({
       next: (data) => {

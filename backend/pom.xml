@@ -22,7 +22,6 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
 
-        <lombok.version>1.18.34</lombok.version>
         <poi.version>5.2.5</poi.version>
         <itext.version>8.0.5</itext.version>
     </properties>
@@ -80,7 +79,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
 

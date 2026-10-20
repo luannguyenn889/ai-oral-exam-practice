@@ -1,0 +1,140 @@
+<div class="transcript-page">
+  @if (loading) {
+    <app-skeleton variant="card"></app-skeleton>
+    <app-skeleton variant="card"></app-skeleton>
+  } @else if (error || !session) {
+    <app-error-state
+      title="Không tìm thấy phiên luyện tập"
+      [message]="error || 'Phiên luyện tập không tồn tại.'"
+      (retry)="loadSession()"
+    ></app-error-state>
+  } @else {
+    <header class="transcript-header">
+      <a
+        [routerLink]="['/student/practice', session.questionId]"
+        class="transcript-header__back"
+      >
+        <span class="material-symbols-outlined">arrow_back</span>
+        Thu âm lại câu trả lời
+      </a>
+
+      <div class="step-indicator">
+        <span class="step-pill step-pill--done">Bước 1: Ghi âm</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill step-pill--active">Bước 2: Xem & Sửa Transcript</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill">Bước 3: Kết quả & Dẫn chứng RAG</span>
+      </div>
+    </header>
+
+    <!-- Thông báo AI đã tự động sửa lỗi thuật ngữ CNTT -->
+    <div class="ai-correction-banner">
+      <span class="material-symbols-outlined ai-correction-banner__icon">auto_fix_high</span>
+      <div>
+        <strong>AI đã tự động chuẩn hóa thuật ngữ chuyên ngành CNTT theo ngữ cảnh đề bài!</strong>
+        <p>
+          Bộ nhận dạng giọng nói: <code>{{ session.sttModel || 'whisper-large-v3 (groq)' }}</code> ·
+          Bộ hiệu đính thuật ngữ: <code>{{ session.correctionModel || 'gemini-2.5-flash' }}</code>.
+          Bạn có thể kiểm tra và sửa lại bất kỳ từ nào bị nghe nhầm trước khi gửi chấm điểm.
+        </p>
+      </div>
+    </div>
+
+    <!-- Tóm tắt câu hỏi đề bài -->
+    @if (question) {
+      <section class="card question-summary-card">
+        <div class="question-summary-card__top">
+          <span class="badge-code">{{ question.courseId }}</span>
+          <h2 class="question-summary-card__title">{{ question.title }}</h2>
+        </div>
+        <p class="question-summary-card__prompt">{{ question.content }}</p>
+      </section>
+    }
+
+    <!-- Khu vực đối chiếu Raw Transcript vs Corrected Transcript -->
+    <section class="card editor-card">
+      <div class="editor-card__header">
+        <h2 class="editor-card__title">
+          <span class="material-symbols-outlined">edit_note</span>
+          Bước 2: Kiểm tra và xác nhận nội dung câu trả lời (Human-in-the-loop)
+        </h2>
+
+        <div class="editor-card__tools">
+          <button
+            type="button"
+            class="btn btn--secondary btn--sm"
+            [disabled]="correcting || grading || !editedTranscript.trim()"
+            (click)="runAiSpellCorrectionAgain()"
+          >
+            <span class="material-symbols-outlined">auto_fix_high</span>
+            {{ correcting ? 'Đang sửa lỗi chính tả...' : 'Chạy AI sửa lỗi chính tả & thuật ngữ' }}
+          </button>
+
+          @if (question?.sampleAnswer) {
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm"
+              [disabled]="correcting || grading"
+              (click)="fillSampleAnswerForTesting()"
+            >
+              <span class="material-symbols-outlined">lightbulb</span>
+              Điền thử câu trả lời mẫu
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (session.audioUrl) {
+        <div class="audio-replay-row">
+          <span class="material-symbols-outlined">headphones</span>
+          <span>Nghe lại bản ghi âm của bạn:</span>
+          <audio [src]="session.audioUrl" controls></audio>
+        </div>
+      }
+
+      @if (session.rawTranscript && showRawComparison) {
+        <div class="raw-transcript-box">
+          <div class="raw-transcript-box__label">
+            <span>Bản ký âm thô ban đầu từ STT (Raw Transcript):</span>
+          </div>
+          <p class="raw-transcript-box__text">"{{ session.rawTranscript }}"</p>
+        </div>
+      }
+
+      <label class="textarea-label" for="transcriptEditor">
+        Văn bản câu trả lời dùng để chấm điểm (Bạn có thể sửa trực tiếp tại đây):
+      </label>
+      <textarea
+        id="transcriptEditor"
+        class="transcript-textarea"
+        rows="7"
+        [(ngModel)]="editedTranscript"
+        [disabled]="grading"
+        placeholder="Nhập hoặc chỉnh sửa nội dung câu trả lời của bạn..."
+      ></textarea>
+
+      <div class="editor-card__footer">
+        <span class="word-count">
+          Độ dài: {{ editedTranscript.trim() ? editedTranscript.trim().split(' ').length : 0 }} từ
+        </span>
+
+        <button
+          type="button"
+          class="btn btn--primary btn--lg"
+          [disabled]="grading || !editedTranscript.trim()"
+          (click)="confirmAndEvaluate()"
+        >
+          <span class="material-symbols-outlined">
+            {{ grading ? 'hourglass_top' : 'fact_check' }}
+          </span>
+          {{
+            grading
+              ? 'Đang tra cứu Giáo trình (Hybrid RAG) & Chấm từng tiêu chí Rubric...'
+              : 'Xác nhận nội dung & Chấm điểm với Hybrid RAG (Bước 3)'
+          }}
+        </button>
+      </div>
+    </section>
+  }
+</div>
+

@@ -1,0 +1,111 @@
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  margin-bottom: var(--space-2);
+}
+
+.admin-title {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.admin-sub {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  max-width: 720px;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.status-banner .material-symbols-outlined {
+  font-size: 36px;
+}
+
+.status-banner h2 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.status-banner p {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.status-banner--online {
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.status-banner--online .material-symbols-outlined {
+  color: var(--color-success);
+}
+
+.status-banner--offline {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.status-banner--offline .material-symbols-outlined {
+  color: var(--color-danger);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+.admin-stat-card h3 {
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+}
+
+.key-ok {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.key-missing {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+

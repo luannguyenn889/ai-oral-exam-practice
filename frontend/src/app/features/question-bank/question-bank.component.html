@@ -2,12 +2,24 @@
   <!-- Page Header -->
   <header class="page-header">
     <div class="page-header__nav">
-      <a routerLink="/student/courses" class="page-header__back-link">
+      <a
+        [routerLink]="isInstructorMode ? '/instructor/courses' : '/student/courses'"
+        class="page-header__back-link"
+      >
         <span class="material-symbols-outlined">arrow_back</span>
         Danh sách học phần
       </a>
       @if (course) {
         <span class="page-header__badge">{{ course.code }}</span>
+      }
+      @if (isInstructorMode) {
+        <a
+          [routerLink]="['/instructor/courses', course?.id || 'IT2030', 'documents']"
+          class="btn btn--secondary btn--sm"
+        >
+          <span class="material-symbols-outlined">menu_book</span>
+          Quản lý Giáo trình RAG ({{ course?.code || 'IT2030' }})
+        </a>
       }
     </div>
 
@@ -102,21 +114,18 @@
 
   <!-- Content States -->
   @if (loading) {
-    <!-- Skeleton Loading State theo muc 6.2 QUY_TAC_THIET_KE_FE.md -->
     <div class="questions-list">
       <app-skeleton variant="card"></app-skeleton>
       <app-skeleton variant="card"></app-skeleton>
       <app-skeleton variant="card"></app-skeleton>
     </div>
   } @else if (error) {
-    <!-- Error State theo muc 6.4 QUY_TAC_THIET_KE_FE.md -->
     <app-error-state
       title="Không thể tải danh sách câu hỏi"
       [message]="error"
       (retry)="loadData()"
     ></app-error-state>
   } @else if (filteredQuestions.length === 0) {
-    <!-- Empty State theo muc 6.3 QUY_TAC_THIET_KE_FE.md -->
     <app-empty-state
       icon="quiz"
       [title]="
@@ -137,7 +146,6 @@
       (action)="resetFilters()"
     ></app-empty-state>
   } @else {
-    <!-- Questions List -->
     <div class="questions-list">
       @for (q of filteredQuestions; track q.id) {
         <div class="question-card">
@@ -185,10 +193,29 @@
               }
             </div>
 
-            <a [routerLink]="['/student/practice', q.id]" class="btn btn--primary">
-              <span class="material-symbols-outlined">mic</span>
-              Bắt đầu luyện tập
-            </a>
+            @if (isInstructorMode) {
+              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <a
+                  [routerLink]="['/instructor/questions', q.id, 'rubric']"
+                  class="btn btn--secondary btn--sm"
+                >
+                  <span class="material-symbols-outlined">fact_check</span>
+                  Xem Rubric ({{ q.rubric?.criteria?.length || 0 }} tiêu chí)
+                </a>
+                <a
+                  [routerLink]="['/instructor/questions', q.id, 'edit']"
+                  class="btn btn--primary btn--sm"
+                >
+                  <span class="material-symbols-outlined">edit</span>
+                  Chỉnh sửa
+                </a>
+              </div>
+            } @else {
+              <a [routerLink]="['/student/practice', q.id]" class="btn btn--primary">
+                <span class="material-symbols-outlined">mic</span>
+                Bắt đầu luyện tập
+              </a>
+            }
           </div>
         </div>
       }

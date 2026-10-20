@@ -4,12 +4,17 @@
     <div class="page-header__content">
       <span class="page-header__badge">
         <span class="material-symbols-outlined">school</span>
-        Kỳ thi vấn đáp AI
+        {{ isInstructorMode ? 'Cổng Giảng viên — Quản lý Học phần & RAG' : 'Kỳ thi vấn đáp AI' }}
       </span>
-      <h1 class="page-header__title">Danh sách học phần ôn luyện</h1>
+      <h1 class="page-header__title">
+        {{ isInstructorMode ? 'Quản lý Học phần & Giáo trình RAG' : 'Danh sách học phần ôn luyện' }}
+      </h1>
       <p class="page-header__subtitle">
-        Lựa chọn học phần bạn muốn ôn thi. Hệ thống cung cấp câu hỏi theo từng chủ đề cùng tiêu chí
-        chấm (Rubric) chi tiết để AI phân tích và phản hồi.
+        {{
+          isInstructorMode
+            ? 'Nạp tài liệu giáo trình (.pdf, .docx, .txt) vào kho tri thức Hybrid RAG (Dense + BM25 + RRF) và biên soạn ngân hàng câu hỏi, Rubric chấm điểm cho từng học phần.'
+            : 'Lựa chọn học phần bạn muốn ôn thi. Hệ thống cung cấp câu hỏi theo từng chủ đề cùng tiêu chí chấm (Rubric) chi tiết và đối chiếu giáo trình bằng AI.'
+        }}
       </p>
     </div>
   </header>
@@ -38,7 +43,6 @@
 
   <!-- Content States -->
   @if (loading) {
-    <!-- Skeleton Loading State theo muc 6.2 QUY_TAC_THIET_KE_FE.md -->
     <div class="courses-grid">
       <app-skeleton variant="card"></app-skeleton>
       <app-skeleton variant="card"></app-skeleton>
@@ -46,14 +50,12 @@
       <app-skeleton variant="card"></app-skeleton>
     </div>
   } @else if (error) {
-    <!-- Error State theo muc 6.4 QUY_TAC_THIET_KE_FE.md -->
     <app-error-state
       title="Không thể tải danh sách học phần"
       [message]="error"
       (retry)="loadCourses()"
     ></app-error-state>
   } @else if (filteredCourses.length === 0) {
-    <!-- Empty State theo muc 6.3 QUY_TAC_THIET_KE_FE.md -->
     <app-empty-state
       icon="search_off"
       [title]="searchQuery ? 'Không tìm thấy kết quả phù hợp' : 'Chưa có học phần nào'"
@@ -62,7 +64,6 @@
       (action)="clearSearch()"
     ></app-empty-state>
   } @else {
-    <!-- Course Cards Grid -->
     <div class="courses-grid">
       @for (course of filteredCourses; track course.id) {
         <div class="course-card">
@@ -94,13 +95,34 @@
               <span class="material-symbols-outlined">quiz</span>
               {{ course.questionCount }} câu hỏi
             </span>
-            <a
-              [routerLink]="['/student/courses', course.id, 'questions']"
-              class="btn btn--primary btn--sm"
-            >
-              Chọn câu hỏi
-              <span class="material-symbols-outlined">arrow_forward</span>
-            </a>
+
+            @if (isInstructorMode) {
+              <div class="course-card__actions">
+                <a
+                  [routerLink]="['/instructor/courses', course.id, 'documents']"
+                  class="btn btn--secondary btn--sm"
+                >
+                  <span class="material-symbols-outlined">menu_book</span>
+                  Giáo trình RAG
+                </a>
+                <a
+                  [routerLink]="['/instructor/questions']"
+                  [queryParams]="{ courseId: course.id }"
+                  class="btn btn--primary btn--sm"
+                >
+                  Câu hỏi & Rubric
+                  <span class="material-symbols-outlined">arrow_forward</span>
+                </a>
+              </div>
+            } @else {
+              <a
+                [routerLink]="['/student/courses', course.id, 'questions']"
+                class="btn btn--primary btn--sm"
+              >
+                Chọn câu hỏi
+                <span class="material-symbols-outlined">arrow_forward</span>
+              </a>
+            }
           </div>
         </div>
       }

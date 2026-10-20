@@ -16,6 +16,7 @@ export class InstructorLayoutComponent {
   readonly role = 'instructor' as const;
   readonly navItems: SidebarItem[] = [
     { label: 'Học phần', path: '/instructor/courses', icon: 'class' },
+    { label: 'Giáo trình RAG (IT2030)', path: '/instructor/courses/IT2030/documents', icon: 'menu_book' },
     { label: 'Danh sách câu hỏi', path: '/instructor/questions', icon: 'quiz' },
     { label: 'Tạo câu hỏi', path: '/instructor/questions/new', icon: 'add_circle' },
   ];

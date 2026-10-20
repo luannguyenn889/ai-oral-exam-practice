@@ -1,0 +1,274 @@
+<div class="rag-page">
+  <!-- Header -->
+  <header class="rag-header">
+    <div class="rag-header__nav">
+      <a routerLink="/instructor/courses" class="rag-header__back">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Danh sách học phần
+      </a>
+      <span class="rag-header__badge">{{ courseId }}</span>
+    </div>
+    <div class="rag-header__top">
+      <div>
+        <h1 class="rag-header__title">
+          Quản lý Giáo trình & Kho tri thức Hybrid RAG
+        </h1>
+        <p class="rag-header__subtitle">
+          {{
+            course
+              ? course.name + ' — ' + course.description
+              : 'Nạp giáo trình chuẩn (.pdf, .docx, .txt) để AI đối chiếu khi chấm thi vấn đáp.'
+          }}
+        </p>
+      </div>
+      <div class="rag-header__actions">
+        <button
+          type="button"
+          class="btn btn--secondary"
+          [disabled]="indexing || loading"
+          (click)="syncRagIndex(false)"
+        >
+          <span class="material-symbols-outlined">sync</span>
+          {{ indexing ? 'Đang đồng bộ...' : 'Đồng bộ nhanh' }}
+        </button>
+        <button
+          type="button"
+          class="btn btn--primary"
+          [disabled]="indexing || loading"
+          (click)="syncRagIndex(true)"
+        >
+          <span class="material-symbols-outlined">autorenew</span>
+          {{ indexing ? 'Đang quét lại...' : 'Tạo lại toàn bộ chỉ mục' }}
+        </button>
+      </div>
+    </div>
+  </header>
+
+  @if (loading) {
+    <div class="rag-stats-grid">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <app-error-state
+      title="Chưa kết nối được với AI Service (Port 8000)"
+      [message]="error"
+      (retry)="loadRagStatus()"
+    ></app-error-state>
+  } @else if (ragStatus) {
+    <!-- Khu vực 1: Thống kê Kho RAG -->
+    <div class="rag-stats-grid">
+      <div class="stat-card">
+        <div class="stat-card__icon stat-card__icon--primary">
+          <span class="material-symbols-outlined">description</span>
+        </div>
+        <div>
+          <div class="stat-card__label">Tài liệu giáo trình đã nạp</div>
+          <div class="stat-card__value">{{ ragStatus.totalFiles }} file</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card__icon stat-card__icon--success">
+          <span class="material-symbols-outlined">dataset</span>
+        </div>
+        <div>
+          <div class="stat-card__label">Tổng số đoạn văn bản (Chunks)</div>
+          <div class="stat-card__value">{{ ragStatus.totalChunks }} đoạn</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card__icon stat-card__icon--info">
+          <span class="material-symbols-outlined">hub</span>
+        </div>
+        <div>
+          <div class="stat-card__label">Chế độ tìm kiếm & Embedding</div>
+          <div class="stat-card__meta">
+            {{ ragStatus.hybridBm25Active ? 'Hybrid (Dense + BM25 + RRF)' : 'Dense Vector' }}
+          </div>
+          <div class="stat-card__sub">{{ ragStatus.embeddingModel }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Khu vực 2: Tải tài liệu mới & Danh sách file đã nạp -->
+    <div class="rag-main-grid">
+      <section class="card rag-upload-card">
+        <h2 class="section-title">
+          <span class="material-symbols-outlined">upload_file</span>
+          Tải lên tài liệu giáo trình mới
+        </h2>
+        <p class="section-desc">
+          Hỗ trợ định dạng <strong>.pdf</strong>, <strong>.docx</strong> (đọc cả đoạn văn và bảng
+          biểu), và <strong>.txt</strong>. Hệ thống tự động chia đoạn 600 ký tự (overlap 100 ký tự)
+          giữ nguyên biên từ tiếng Việt.
+        </p>
+
+        <label class="upload-dropzone" [class.upload-dropzone--busy]="uploading">
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            [disabled]="uploading"
+            (change)="onFileSelected($event)"
+            hidden
+          />
+          <span class="material-symbols-outlined upload-dropzone__icon">
+            {{ uploading ? 'hourglass_top' : 'cloud_upload' }}
+          </span>
+          <span class="upload-dropzone__title">
+            {{
+              uploading
+                ? 'Đang trích xuất văn bản & tạo Vector Embedding...'
+                : 'Nhấn để chọn file giáo trình (.pdf, .docx, .txt)'
+            }}
+          </span>
+          <span class="upload-dropzone__hint">
+            Tài liệu sẽ được gắn nhãn môn học {{ courseId }} và lập chỉ mục tự động
+          </span>
+        </label>
+
+        <div class="rag-features-list">
+          @for (feat of ragStatus.features; track feat) {
+            <span class="rag-feature-pill">
+              <span class="material-symbols-outlined">check_circle</span>
+              {{ feat }}
+            </span>
+          }
+        </div>
+      </section>
+
+      <section class="card rag-files-card">
+        <div class="section-header-row">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined">folder_open</span>
+            Danh sách tài liệu môn {{ courseId }} ({{ ragStatus.files.length }})
+          </h2>
+        </div>
+
+        @if (ragStatus.files.length === 0) {
+          <div class="empty-files">
+            <span class="material-symbols-outlined">Inbox</span>
+            <p>Chưa có tài liệu nào trong học phần {{ courseId }}. Hãy tải lên file đầu tiên!</p>
+          </div>
+        } @else {
+          <ul class="file-list">
+            @for (file of ragStatus.files; track file) {
+              <li class="file-item">
+                <div class="file-item__info">
+                  <span class="material-symbols-outlined file-item__icon">article</span>
+                  <span class="file-item__name">{{ file }}</span>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm file-item__delete"
+                  [disabled]="deletingFile === file"
+                  (click)="deleteDocument(file)"
+                  title="Xóa tài liệu khỏi kho RAG"
+                >
+                  <span class="material-symbols-outlined">delete</span>
+                  {{ deletingFile === file ? 'Đang xóa...' : 'Xóa' }}
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    </div>
+
+    <!-- Khu vực 3: Khung Tìm thử trong Giáo trình (Test Hybrid RAG Search) -->
+    <section class="card rag-search-card">
+      <h2 class="section-title">
+        <span class="material-symbols-outlined">manage_search</span>
+        Kiểm tra thử Truy xuất Giáo trình (Test Hybrid RAG)
+      </h2>
+      <p class="section-desc">
+        Nhập thử câu hỏi hoặc câu trả lời của sinh viên để kiểm tra xem thuật toán
+        <strong>Hybrid Search (ChromaDB Cosine + BM25 + RRF k=60)</strong> trích xuất đoạn giáo
+        trình nào.
+      </p>
+
+      <div class="rag-search-controls">
+        <div class="rag-search-input-wrap">
+          <input
+            type="text"
+            class="rag-search-input"
+            [(ngModel)]="searchQuery"
+            placeholder="Nhập câu hỏi hoặc câu trả lời giả định của sinh viên..."
+            (keyup.enter)="runTestSearch()"
+          />
+        </div>
+
+        <div class="rag-search-options">
+          <label class="rag-option-label">
+            Chế độ:
+            <select [(ngModel)]="searchMode" class="rag-select">
+              <option value="hybrid">Hybrid (Dense + BM25 + RRF)</option>
+              <option value="dense">Dense Vector (Ngữ nghĩa)</option>
+              <option value="bm25">Sparse BM25 (Từ khóa)</option>
+            </select>
+          </label>
+
+          <label class="rag-option-label">
+            Top-K:
+            <select [(ngModel)]="topK" class="rag-select">
+              <option [ngValue]="2">2 đoạn</option>
+              <option [ngValue]="3">3 đoạn</option>
+              <option [ngValue]="5">5 đoạn</option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            class="btn btn--primary"
+            [disabled]="searching || !searchQuery.trim()"
+            (click)="runTestSearch()"
+          >
+            <span class="material-symbols-outlined">search</span>
+            {{ searching ? 'Đang tìm...' : 'Tìm thử trong giáo trình' }}
+          </button>
+        </div>
+      </div>
+
+      @if (cleanedQuery) {
+        <div class="cleaned-query-banner">
+          <strong>Câu truy vấn sau khi lọc từ đệm vấn đáp (clean_oral_query):</strong>
+          <code>{{ cleanedQuery }}</code>
+        </div>
+      }
+
+      @if (hasSearched && !searching) {
+        @if (searchResults.length === 0) {
+          <div class="empty-files">
+            <p>Không tìm thấy đoạn văn bản nào khớp trong môn {{ courseId }}.</p>
+          </div>
+        } @else {
+          <div class="rag-results-list">
+            @for (chunk of searchResults; track chunk.chunkId; let idx = $index) {
+              <div class="rag-chunk-card">
+                <div class="rag-chunk-card__header">
+                  <span class="rag-chunk-card__rank">#{{ idx + 1 }} · {{ chunk.source }}</span>
+                  <div class="rag-chunk-card__badges">
+                    <span class="rag-badge rag-badge--source">
+                      Nguồn tìm: {{ chunk.retrievedBy }}
+                    </span>
+                    @if (chunk.denseSim !== null && chunk.denseSim !== undefined) {
+                      <span class="rag-badge">Cosine: {{ chunk.denseSim }}</span>
+                    }
+                    @if (chunk.bm25Score !== null && chunk.bm25Score !== undefined) {
+                      <span class="rag-badge">BM25: {{ chunk.bm25Score }}</span>
+                    }
+                    <span class="rag-badge rag-badge--rrf">RRF: {{ chunk.rrfScore }}</span>
+                  </div>
+                </div>
+                <p class="rag-chunk-card__text">{{ chunk.text }}</p>
+              </div>
+            }
+          </div>
+        }
+      }
+    </section>
+  }
+</div>
+

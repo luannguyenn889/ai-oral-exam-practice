@@ -18,11 +18,13 @@ export const routes: Routes = [
       import('./features/auth/register/register.component').then((m) => m.RegisterComponent),
   },
 
-  // Luong Sinh vien
+  // Luồng Sinh viên (/student/*)
   {
     path: 'student',
     loadComponent: () =>
-      import('./core/layout/student-layout/student-layout.component').then((m) => m.StudentLayoutComponent),
+      import('./core/layout/student-layout/student-layout.component').then(
+        (m) => m.StudentLayoutComponent,
+      ),
     canActivate: [roleGuard(['student'])],
     children: [
       {
@@ -54,67 +56,46 @@ export const routes: Routes = [
       {
         path: 'practice/:questionId',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/student/practice-recorder/practice-recorder.component').then(
+            (m) => m.PracticeRecorderComponent,
           ),
-        data: {
-          title: 'Ghi âm bài làm vấn đáp',
-          description:
-            'Giao diện ghi âm, kiểm tra mic, đồng hồ đếm ngược và nghe lại audio (Giai đoạn C).',
-          icon: 'mic',
-        },
       },
       {
         path: 'sessions/:sessionId/transcript',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/student/transcript-review/transcript-review.component').then(
+            (m) => m.TranscriptReviewComponent,
           ),
-        data: {
-          title: 'Xem và xác nhận Transcript',
-          description:
-            'Trang cho phép sinh viên kiểm tra và sửa lại bản ghi nhận dạng giọng nói trước khi gửi chấm AI (Giai đoạn D).',
-          icon: 'description',
-        },
       },
       {
         path: 'sessions/:sessionId/result',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/student/session-result/session-result.component').then(
+            (m) => m.SessionResultComponent,
           ),
-        data: {
-          title: 'Kết quả chấm điểm AI',
-          description:
-            'Hiển thị điểm tổng, điểm từng tiêu chí rubric, nhận xét bằng chứng và gợi ý cải thiện (Giai đoạn D).',
-          icon: 'analytics',
-        },
       },
       {
         path: 'history',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/student/student-history/student-history.component').then(
+            (m) => m.StudentHistoryComponent,
           ),
-        data: {
-          title: 'Lịch sử luyện tập',
-          description: 'Danh sách các phiên luyện tập đã thực hiện cùng kết quả chi tiết.',
-          icon: 'history',
-        },
       },
     ],
   },
 
-  // Luong Giang vien
+  // Luồng Giảng viên (/instructor/*)
   {
     path: 'instructor',
     loadComponent: () =>
-      import('./core/layout/instructor-layout/instructor-layout.component').then((m) => m.InstructorLayoutComponent),
+      import('./core/layout/instructor-layout/instructor-layout.component').then(
+        (m) => m.InstructorLayoutComponent,
+      ),
     canActivate: [roleGuard(['instructor'])],
     children: [
       {
         path: '',
-        redirectTo: 'questions',
+        redirectTo: 'courses',
         pathMatch: 'full',
       },
       {
@@ -122,6 +103,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/course-selection/course-selection.component').then(
             (m) => m.CourseSelectionComponent,
+          ),
+      },
+      {
+        path: 'courses/:courseId/documents',
+        loadComponent: () =>
+          import('./features/instructor/course-documents/course-documents.component').then(
+            (m) => m.CourseDocumentsComponent,
           ),
       },
       {
@@ -171,11 +159,13 @@ export const routes: Routes = [
     ],
   },
 
-  // Giao diện quản trị hiện là placeholder; route vẫn được bảo vệ theo role admin.
+  // Luồng Quản trị viên (/admin/*)
   {
     path: 'admin',
     loadComponent: () =>
-      import('./core/layout/admin-layout/admin-layout.component').then((m) => m.AdminLayoutComponent),
+      import('./core/layout/admin-layout/admin-layout.component').then(
+        (m) => m.AdminLayoutComponent,
+      ),
     canActivate: [roleGuard(['admin'])],
     children: [
       {
@@ -186,19 +176,14 @@ export const routes: Routes = [
       {
         path: 'dashboard',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/admin/admin-dashboard/admin-dashboard.component').then(
+            (m) => m.AdminDashboardComponent,
           ),
-        data: {
-          title: 'Tổng quan quản trị viên',
-          description: 'Tài khoản đã đăng nhập với quyền quản trị viên.',
-          icon: 'admin_panel_settings',
-        },
       },
     ],
   },
 
-  // Trang loi va 404
+  // Trang lỗi và 404
   {
     path: 'error',
     loadComponent: () =>

@@ -1,6 +1,6 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../data-access/api/practice.api';
 import { Course } from '../../shared/models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -22,11 +22,16 @@ import { ErrorStateComponent } from '../../shared/components/error-state/error-s
 })
 export class CourseSelectionComponent implements OnInit {
   private practiceApi = inject(PracticeApi);
+  private router = inject(Router);
 
   loading = true;
   error: string | null = null;
   courses: Course[] = [];
   searchQuery = '';
+
+  get isInstructorMode(): boolean {
+    return this.router.url.startsWith('/instructor');
+  }
 
   get filteredCourses(): Course[] {
     const q = this.searchQuery.trim().toLowerCase();
@@ -44,7 +49,7 @@ export class CourseSelectionComponent implements OnInit {
     if (this.searchQuery) {
       return `Không có học phần nào khớp với từ khóa "${this.searchQuery}". Hãy thử tìm kiếm bằng từ khóa khác.`;
     }
-    return 'Hiện tại hệ thống chưa cập nhật danh sách học phần nào cho lớp của bạn.';
+    return 'Hiện tại hệ thống chưa cập nhật danh sách học phần nào.';
   }
 
   ngOnInit(): void {
