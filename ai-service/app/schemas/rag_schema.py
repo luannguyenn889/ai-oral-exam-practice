@@ -1,3 +1,13 @@
+"""Các mô hình dữ liệu (Pydantic Schemas) cho phân hệ Quản lý & Truy xuất Giáo trình (RAG).
+
+Nhiệm vụ:
+- RagIndexRequest & RagIndexResponse: Khuôn dữ liệu gửi vào và kết quả trả về khi thực hiện quét/lập chỉ mục tài liệu giáo trình của môn học.
+- RagSearchRequest: Dữ liệu gửi vào khi tìm kiếm đoạn trích giáo trình (mã môn, câu truy vấn, chế độ hybrid/dense/bm25, top_k, rerank).
+- RagChunkResult: Cấu trúc chi tiết của từng đoạn văn bản tìm được (chunk_id, nguồn file, điểm tương đồng Cosine, BM25, RRF).
+- RagSearchResponse: Kết quả tìm kiếm tổng hợp kèm chuỗi ngữ cảnh chuẩn bị sẵn cho LLM prompt (formatted_context).
+- RagStatusResponse: Báo cáo trạng thái kho tài liệu môn học (số lượng file, số chunk, tình trạng BM25).
+"""
+
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 

@@ -1,3 +1,12 @@
+"""Các mô hình dữ liệu (Pydantic Schemas) cho phân hệ Nhận dạng giọng nói (STT).
+
+Nhiệm vụ:
+- TranscriptionRequest: Khuôn dữ liệu gửi vào khi yêu cầu phiên âm file âm thanh theo đường dẫn.
+- TranscriptionResponse: Cấu trúc kết quả trả về gồm: văn bản thô (raw_transcript), văn bản chuẩn hóa (corrected_transcript), thời lượng, model sử dụng và thời gian xử lý.
+- SpellCorrectionRequest: Khuôn dữ liệu gửi vào khi yêu cầu AI sửa chính tả / thuật ngữ CNTT cho đoạn văn bản có sẵn.
+- SpellCorrectionResponse: Cấu trúc kết quả trả về của bước sửa chính tả.
+"""
+
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 

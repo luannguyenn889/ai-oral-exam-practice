@@ -1,3 +1,19 @@
+"""Dịch vụ xử lý Nhận dạng giọng nói (STT) và Hiệu đính thuật ngữ CNTT.
+
+Nhiệm vụ:
+- Hỗ trợ đa dạng provider STT:
+    + Groq Cloud (whisper-large-v3): Tốc độ siêu nhanh, độ chính xác cao (mặc định).
+    + Google Gemini Audio (gemini-2.5-flash): Nhận dạng trực tiếp qua API Gemini.
+    + Whisper cục bộ (OpenAI Whisper) & VinAI PhoWhisper (HuggingFace transformers).
+    + Mock provider: Phục vụ chạy thử nghiệm, test luồng không cần mic.
+- Tự động chuẩn hóa file âm thanh sang định dạng chuẩn 16kHz mono WAV (qua ffmpeg hoặc pydub).
+- correct_transcript_with_gemini:
+    + Kế thừa prompt từ speed-to-text-demo để đối chiếu câu hỏi đề thi và rubric.
+    + Sửa các từ phát âm nhầm của sinh viên thành thuật ngữ chuẩn ngành CNTT (ví dụ: 'úp' -> 'OOP', 'lắp' -> 'lớp', 'phương thức', 'kế thừa'...) mà giữ nguyên 100% ngữ nghĩa ban đầu.
+- run_transcription_pipeline:
+    + Điều phối toàn bộ luồng STT -> Hiệu đính chính tả -> Đo thời lượng & thời gian xử lý.
+"""
+
 import contextlib
 import gc
 import os

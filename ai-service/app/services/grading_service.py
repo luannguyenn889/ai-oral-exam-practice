@@ -1,3 +1,18 @@
+"""Dịch vụ Chấm điểm bài thi vấn đáp tự động bằng AI kết hợp Rubric và RAG.
+
+Nhiệm vụ:
+- build_grading_prompt:
+    + Thiết lập System Instruction định hình vai trò Giảng viên đại học ngành CNTT khách quan, công tâm, chuyên nghiệp.
+    + Tích hợp kiến thức chuẩn trích xuất từ giáo trình môn học (RAG Context).
+    + Truyền danh sách tiêu chí Rubric chi tiết (tên tiêu chí, mô tả yêu cầu, thang điểm con).
+    + Truyền transcript câu trả lời đã xác nhận của sinh viên để đối chiếu.
+- evaluate_oral_answer:
+    + Tự động kích hoạt Hybrid RAG (Dense + BM25 + RRF) lấy Top-K đoạn giáo trình chuẩn sát nhất với câu hỏi.
+    + Gọi Gemini (gemini-2.5-flash / gemini-2.5-pro / Ollama gemma3:4b) với Structured Outputs (JSON Schema).
+    + Trả về đánh giá từng tiêu chí, bằng chứng trích từ bài nói, điểm mạnh, điểm thiếu sót so với giáo trình, gợi ý cải thiện.
+    + Hậu kiểm tra (post-validation): kiểm tra tính hợp lệ của điểm, đảm bảo không vượt quá thang điểm 10 hoặc thang điểm tiêu chí.
+"""
+
 import json
 import os
 import re

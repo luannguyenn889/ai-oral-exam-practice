@@ -1,3 +1,20 @@
+"""Router định tuyến các API quản lý giáo trình và tìm kiếm RAG (Retrieval-Augmented Generation).
+
+Nhiệm vụ:
+- POST /ai/rag/index:
+    + Quét và lập chỉ mục (index) toàn bộ tài liệu giáo trình (.docx, .pdf, .txt) của một môn học vào ChromaDB (Dense) và BM25 (Sparse).
+- POST /ai/rag/upload:
+    + Cho phép Giảng viên tải file giáo trình mới lên kho tài liệu của môn học và tự động cập nhật chỉ mục.
+- POST /ai/rag/search:
+    + Tìm kiếm các đoạn giáo trình liên quan nhất theo câu hỏi/bài làm với các chế độ: 'hybrid' (Dense + BM25 + RRF), 'dense', hoặc 'bm25'. Hỗ trợ tái xếp hạng Cross-Encoder.
+- GET /ai/rag/status:
+    + Kiểm tra trạng thái kho giáo trình của môn học (số file, tổng số chunks, model embedding, tình trạng BM25).
+- DELETE /ai/rag/documents/{course_id}/{filename}:
+    + Xóa tài liệu khỏi kho giáo trình và loại bỏ các chunk tương ứng khỏi chỉ mục ChromaDB & BM25.
+- GET /ai/rag/presets:
+    + Cung cấp dữ liệu đề thi và Rubric mẫu từ file data/BỘ ĐỀ THI.txt (phục vụ tham khảo và khởi tạo nhanh).
+"""
+
 import os
 from pathlib import Path
 from typing import Optional

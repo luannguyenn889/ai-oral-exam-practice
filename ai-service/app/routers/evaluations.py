@@ -1,3 +1,12 @@
+"""Router định tuyến API chấm điểm câu trả lời vấn đáp (Grading & Evaluation).
+
+Nhiệm vụ:
+- POST /ai/evaluations:
+    + Tiếp nhận thông tin bài làm: session_id, course_id, câu hỏi, đáp án tham chiếu, transcript bài làm của sinh viên, danh sách tiêu chí Rubric và cấu hình RAG.
+    + Điều phối tới grading_service để thực hiện truy xuất giáo trình chuẩn (RAG Context) và gọi LLM (Gemini) chấm điểm chi tiết.
+    + Trả về kết quả có cấu trúc: điểm tổng, điểm từng tiêu chí kèm bằng chứng (evidence), điểm mạnh, thiếu sót, gợi ý cải thiện và danh sách đoạn trích dẫn giáo trình RAG.
+"""
+
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.eval_schema import EvaluationRequest, EvaluationResponse

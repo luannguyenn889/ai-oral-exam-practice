@@ -1,3 +1,22 @@
+"""Dịch vụ Quản lý & Truy xuất Giáo trình thông minh (Hybrid RAG: Dense + BM25 + RRF).
+
+Nhiệm vụ:
+- Đọc và trích xuất nội dung đa định dạng:
+    + File Word (.docx): Trích xuất toàn bộ đoạn văn và cấu trúc bảng biểu.
+    + File PDF (.pdf): Hỗ trợ PDF text layer (PyMuPDF, pypdf) và PDF bản scan (Tesseract OCR tiếng Việt + tiếng Anh).
+    + File Text thuần (.txt).
+- Boundary-Preserved Chunking:
+    + Phân đoạn văn bản với kích thước chunk_size=600 ký tự và overlap=100 ký tự.
+    + Tôn trọng ranh giới câu và đoạn văn hoàn chỉnh, không cắt ngang giữa từ (word-boundary safe).
+- Chỉ mục lai kép (Hybrid Indexing) phân lập theo từng học phần (course_id):
+    + Dense Index: Tạo vector nhúng (Sentence-Transformers đa ngôn ngữ hoặc Gemini Embedding) lưu trong ChromaDB.
+    + Sparse Index: Lập chỉ mục từ khóa với BM25Okapi để tìm chính xác thuật ngữ chuyên ngành.
+- Tìm kiếm & Hợp nhất xếp hạng:
+    + clean_oral_query: Lọc bỏ các từ đệm, từ xưng hô sinh viên ("dạ thưa thầy", "em xin trình bày"...) để giữ lại từ khóa kỹ thuật cốt lõi.
+    + Reciprocal Rank Fusion (RRF, hằng số k=60): Kết hợp điểm số giữa Dense Semantic và BM25 Keyword.
+    + Cross-Encoder Reranker: Tùy chọn tái xếp hạng lại Top-K đoạn trích để đạt độ chính xác cao nhất trước khi gửi vào LLM.
+"""
+
 import glob
 import hashlib
 import os

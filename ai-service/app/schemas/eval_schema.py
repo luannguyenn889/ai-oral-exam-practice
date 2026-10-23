@@ -1,3 +1,14 @@
+"""Các mô hình dữ liệu (Pydantic Schemas) cho phân hệ Chấm điểm vấn đáp (Grading & Evaluation).
+
+Nhiệm vụ:
+- RubricCriterionInput: Định nghĩa một tiêu chí chấm điểm trong Rubric (mã, tên, mô tả, điểm tối đa).
+- RagConfig: Cấu hình cơ chế tra cứu giáo trình hỗ trợ chấm (bật/tắt RAG, chế độ hybrid/dense/bm25, số lượng top_k, rerank).
+- EvaluationRequest: Dữ liệu gửi vào khi chấm điểm một bài làm (session_id, course_id, câu hỏi, đáp án mẫu, transcript sinh viên, rubric, rag_config, llm_model).
+- CriterionEvaluation: Đánh giá chi tiết cho từng tiêu chí Rubric (điểm đạt được, trích dẫn bằng chứng từ bài làm, thiếu sót/sai sót, nhận xét).
+- RagReference: Đoạn trích dẫn tài liệu giáo trình được AI sử dụng làm căn cứ đối chiếu khi chấm.
+- EvaluationResponse: Cấu trúc kết quả chấm điểm toàn diện trả về cho Frontend và Backend.
+"""
+
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 

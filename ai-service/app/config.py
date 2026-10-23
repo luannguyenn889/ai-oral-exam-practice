@@ -1,3 +1,14 @@
+"""Quản lý cấu hình tập trung của AI Service.
+
+Nhiệm vụ:
+- Tải các biến môi trường từ file .env (khóa API Gemini, Groq, cấu hình model STT/LLM/Embedding).
+- Định nghĩa lớp Settings (Pydantic Settings) với các giá trị mặc định an toàn cho hệ thống.
+- Cung cấp các đường dẫn thư mục chuẩn hóa:
+    + resolved_documents_dir: Thư mục chứa tài liệu/giáo trình môn học theo từng course_id.
+    + resolved_chroma_db_dir: Thư mục cơ sở dữ liệu vector ChromaDB.
+    + get_course_documents_dir(course_id): Hàm tiện ích lấy thư mục tài liệu riêng của từng môn.
+"""
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv

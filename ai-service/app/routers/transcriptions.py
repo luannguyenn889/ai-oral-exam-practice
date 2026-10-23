@@ -1,3 +1,16 @@
+"""Router định tuyến các API chuyển giọng nói thành văn bản (STT) và chuẩn hóa chính tả.
+
+Nhiệm vụ:
+- POST /ai/transcriptions/upload:
+    + Tiếp nhận file ghi âm được upload trực tiếp từ Frontend (MediaRecorder .webm, .wav, .mp3).
+    + Chuyển tiếp tới stt_service để chạy pipeline STT (Groq/Gemini/Whisper/Mock).
+    + Tự động gọi Gemini sửa lỗi chính tả & chuẩn hóa thuật ngữ chuyên ngành CNTT theo ngữ cảnh câu hỏi/rubric.
+- POST /ai/transcriptions:
+    + Tiếp nhận đường dẫn file âm thanh cục bộ trên máy để chạy pipeline STT tương tự.
+- POST /ai/transcriptions/correct:
+    + Cho phép sinh viên/giảng viên chủ động yêu cầu AI chạy lại bước hiệu đính chính tả và chuẩn hóa thuật ngữ cho đoạn văn bản có sẵn.
+"""
+
 import os
 import tempfile
 from typing import Literal, Optional

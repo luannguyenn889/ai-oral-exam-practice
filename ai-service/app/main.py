@@ -1,3 +1,16 @@
+"""Điểm khởi động chính của AI Service (FastAPI).
+
+Nhiệm vụ:
+- Khởi tạo ứng dụng FastAPI và cấu hình CORS cho phép Frontend Angular gọi trực tiếp.
+- Quản lý vòng đời (lifespan): tự động khởi tạo thư mục lưu giáo trình và ChromaDB.
+- Ghi nhận nhật ký (logging middleware): theo dõi mọi HTTP request/response ra terminal.
+- Gắn kết các router chức năng:
+    + /ai/transcriptions: Chuyển giọng nói thành văn bản (STT) và sửa lỗi thuật ngữ CNTT.
+    + /ai/evaluations: Chấm điểm câu trả lời vấn đáp kết hợp Rubric và RAG.
+    + /ai/rag: Quản lý kho giáo trình, lập chỉ mục và tìm kiếm ngữ nghĩa.
+- Cung cấp endpoint kiểm tra tình trạng dịch vụ (/health và /ai/health).
+"""
+
 import time
 from contextlib import asynccontextmanager
 from typing import Any

@@ -1,3 +1,14 @@
+"""Bộ kiểm thử tích hợp tự động cho AI Service (Integration & Unit Tests).
+
+Nhiệm vụ:
+- Kiểm tra trạng thái sức khỏe và cấu hình API key (/ai/health).
+- Kiểm tra hàm clean_oral_query (lọc từ đệm nói miệng) và thuật toán chia nhỏ tài liệu (chunk_text, get_clean_overlap).
+- Kiểm tra pipeline lập chỉ mục giáo trình vào ChromaDB và BM25 cho học phần IT2030.
+- Kiểm tra tìm kiếm giáo trình Hybrid RAG (Dense + BM25 + RRF) đảm bảo trả đúng đoạn trích dẫn và điểm số.
+- Kiểm tra pipeline nhận dạng giọng nói STT (Mock provider) và bước hiệu đính thuật ngữ CNTT bằng Gemini.
+- Kiểm tra toàn trình endpoint chấm điểm (/ai/evaluations): gửi câu hỏi, rubric, transcript -> kiểm tra định dạng JSON và điểm số.
+"""
+
 from fastapi.testclient import TestClient
 
 from app.main import app
