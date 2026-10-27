@@ -20,6 +20,22 @@
           <span class="material-symbols-outlined">menu_book</span>
           Quản lý Giáo trình RAG ({{ course?.code || 'IT2030' }})
         </a>
+        <a
+          [routerLink]="['/instructor/questions/import']"
+          [queryParams]="course?.id ? { courseId: course?.id } : null"
+          class="btn btn--secondary btn--sm"
+        >
+          <span class="material-symbols-outlined">upload_file</span>
+          Nhập file Word/Excel (AI)
+        </a>
+        <a
+          [routerLink]="['/instructor/questions/new']"
+          [queryParams]="course?.id ? { courseId: course?.id } : null"
+          class="btn btn--primary btn--sm"
+        >
+          <span class="material-symbols-outlined">add_circle</span>
+          Thêm câu hỏi mới
+        </a>
       }
     </div>
 

@@ -29,3 +29,9 @@ data/
 *.wav
 *.mp3
 *.m4a
+
+# Secrets and OAuth credentials
+*client_secret*.json
+*credentials*.json
+*.pem
+*.key

@@ -1,13 +1,24 @@
 import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Observable, of, delay, throwError, catchError, map } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import { PracticeApi } from '../api/practice.api';
-import { Course, Question, Rubric, PracticeSession, Evaluation } from '../../shared/models';
+import {
+  Course,
+  Question,
+  Rubric,
+  PracticeSession,
+  Evaluation,
+  ExtractedQuestion,
+  QuestionExtractResult,
+} from '../../shared/models';
 import { AiRagService } from '../../core/services/ai-rag.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class MockPracticeApi extends PracticeApi {
+  private http = inject(HttpClient);
   private aiRagService = inject(AiRagService);
   private sessionAudioBlobs = new Map<string, Blob>();
 
@@ -627,77 +638,163 @@ export class MockPracticeApi extends PracticeApi {
   }
 
   override getCourses(): Observable<Course[]> {
-    return of([...this.mockCourses]).pipe(delay(250));
+    return this.http.get<Course[]>(`${environment.apiBaseUrl}/courses`).pipe(
+      map((courses) => {
+        if (courses && courses.length > 0) {
+          courses.forEach((c) => {
+            const idx = this.mockCourses.findIndex((mc) => mc.id === c.id || mc.code === c.code);
+            if (idx === -1) {
+              this.mockCourses.push(c);
+            } else {
+              this.mockCourses[idx] = c;
+            }
+          });
+          return courses;
+        }
+        return this.mockCourses;
+      }),
+      catchError(() => of([...this.mockCourses])),
+    );
+  }
+
+  private mapServerQuestion(res: any): Question {
+    return {
+      id: String(res.id),
+      courseId: String(res.courseId || ''),
+      topic: res.topic || '',
+      title: res.title || '',
+      content: res.content || '',
+      sampleAnswer: res.sampleAnswer || '',
+      difficulty: res.difficulty || 'medium',
+      timeLimitSeconds: res.timeLimitSeconds || 180,
+      tags: res.tags || [],
+      parentQuestionId: res.parentQuestionId ? String(res.parentQuestionId) : null,
+      rubric: res.rubric
+        ? {
+            id: String(res.rubric.id),
+            questionId: String(res.id),
+            totalScore: Number(res.rubric.totalScore) || 10.0,
+            gradingInstructions: res.rubric.gradingInstructions,
+            criteria: (res.rubric.criteria || []).map((c: any) => ({
+              id: String(c.id),
+              name: c.name,
+              description: c.description,
+              maxScore: Number(c.maxScore) || 2.5,
+            })),
+          }
+        : undefined,
+    };
   }
 
   override getQuestions(courseId?: string): Observable<Question[]> {
-    const list = courseId
-      ? this.mockQuestions.filter((q) => q.courseId === courseId)
-      : this.mockQuestions;
-    return of([...list]).pipe(delay(250));
+    const url = courseId
+      ? `${environment.apiBaseUrl}/courses/${courseId}/questions`
+      : `${environment.apiBaseUrl}/questions`;
+
+    return this.http.get<any[]>(url).pipe(
+      map((serverList) => {
+        const questions = (serverList || []).map((q) => this.mapServerQuestion(q));
+        questions.forEach((q) => {
+          const idx = this.mockQuestions.findIndex((item) => item.id === q.id);
+          if (idx !== -1) {
+            this.mockQuestions[idx] = q;
+          } else {
+            this.mockQuestions.push(q);
+          }
+        });
+        return questions;
+      }),
+      catchError((err) => {
+        console.warn('Lấy câu hỏi từ Backend không thành công, dùng danh sách đệm:', err);
+        const list = courseId
+          ? this.mockQuestions.filter((q) => q.courseId === courseId)
+          : this.mockQuestions;
+        return of([...list]);
+      }),
+    );
   }
 
   override getQuestion(questionId: string): Observable<Question> {
-    const q = this.mockQuestions.find((item) => item.id === questionId) || this.mockQuestions[0];
-    return of({ ...q }).pipe(delay(200));
+    return this.http.get<any>(`${environment.apiBaseUrl}/questions/${questionId}`).pipe(
+      map((serverQ) => {
+        const q = this.mapServerQuestion(serverQ);
+        const idx = this.mockQuestions.findIndex((item) => item.id === q.id);
+        if (idx !== -1) {
+          this.mockQuestions[idx] = q;
+        } else {
+          this.mockQuestions.unshift(q);
+        }
+        return q;
+      }),
+      catchError((err) => {
+        console.warn('Lấy chi tiết câu hỏi từ Backend không thành công, dùng câu hỏi đệm:', err);
+        const q =
+          this.mockQuestions.find((item) => item.id === questionId) || this.mockQuestions[0];
+        return of({ ...q });
+      }),
+    );
   }
 
   override createPracticeSession(questionId: string): Observable<PracticeSession> {
-    const q = this.mockQuestions.find((item) => item.id === questionId) || this.mockQuestions[0];
-    const course = this.mockCourses.find((c) => c.id === q.courseId);
-    const newSession: PracticeSession = {
-      id: `session-${Date.now()}`,
-      questionId: q.id,
-      courseId: q.courseId || 'IT2030',
-      questionTitle: q.title || 'Câu hỏi luyện tập',
-      courseName: course?.name || 'Nhập môn Công nghệ phần mềm (QNU)',
-      userId: 'user-student-1',
-      status: 'recording',
-      isTranscriptConfirmed: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    this.mockSessions.unshift(newSession);
-    this.persistSessionsToStorage();
-    return of(newSession).pipe(delay(100));
+    return this.getQuestion(questionId).pipe(
+      map((q) => {
+        const course = this.mockCourses.find((c) => c.id === q.courseId);
+        const newSession: PracticeSession = {
+          id: `session-${Date.now()}`,
+          questionId: q.id,
+          courseId: q.courseId || 'IT2030',
+          questionTitle: q.title || 'Câu hỏi luyện tập',
+          courseName: course?.name || 'Học phần vấn đáp',
+          userId: 'user-student-1',
+          status: 'recording',
+          isTranscriptConfirmed: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        (newSession as any)._question = q;
+        this.mockSessions.unshift(newSession);
+        this.persistSessionsToStorage();
+        return newSession;
+      }),
+    );
   }
 
   override getPracticeSession(sessionId: string): Observable<PracticeSession> {
     const s = this.ensureSession(sessionId);
-    return of({ ...s }).pipe(delay(100));
+    return of({ ...s }).pipe(delay(50));
   }
 
   override uploadAudio(sessionId: string, audioFile: Blob): Observable<PracticeSession> {
     const s = this.ensureSession(sessionId);
     this.sessionAudioBlobs.set(sessionId, audioFile);
     s.status = 'uploaded';
-    if (audioFile.size > 100) {
+    if (audioFile.size > 50) {
       s.audioUrl = URL.createObjectURL(audioFile);
     }
     s.updatedAt = new Date().toISOString();
     this.persistSessionsToStorage();
-    return of({ ...s }).pipe(delay(100));
+    return of({ ...s }).pipe(delay(50));
   }
 
   override requestTranscription(sessionId: string): Observable<{ status: string; jobId?: string }> {
     const s = this.ensureSession(sessionId);
-    const q = this.mockQuestions.find((item) => item.id === s.questionId) || this.mockQuestions[0];
-    const audioBlob =
-      this.sessionAudioBlobs.get(sessionId) ||
-      new Blob(['simulated-oral-exam-audio'], { type: 'audio/webm' });
-    const rubricSummary = (q.rubric?.criteria || [])
-      .map((c) => `${c.name}: ${c.description}`)
-      .join('; ');
+    const q = (s as any)._question || this.mockQuestions.find((item) => item.id === s.questionId) || this.mockQuestions[0];
+    const audioBlob = this.sessionAudioBlobs.get(sessionId);
 
-    // Nếu là file thu âm thật (> 100 bytes) -> gọi Groq STT, nếu là nút "Dùng thử bản ghi mẫu" -> gọi provider 'mock' trên FastAPI kèm Gemini Spell Correction
-    const preferredProvider: 'groq' | 'mock' = audioBlob.size > 100 ? 'groq' : 'mock';
+    if (!audioBlob || audioBlob.size < 50) {
+      return throwError(() => new Error('Không tìm thấy file ghi âm giọng nói của bạn. Vui lòng ghi âm lại trước khi chuyển văn bản.'));
+    }
+
+    const rubricSummary = (q.rubric?.criteria || [])
+      .map((c: any) => `${c.name}: ${c.description}`)
+      .join('; ');
 
     return this.aiRagService
       .transcribeUploadedAudio(
         audioBlob,
         q.content || s.questionTitle || '',
         rubricSummary,
-        preferredProvider,
+        'groq',
         true,
       )
       .pipe(
@@ -712,32 +809,14 @@ export class MockPracticeApi extends PracticeApi {
           this.persistSessionsToStorage();
           return { status: 'success', jobId: `job-stt-${Date.now()}` };
         }),
-        catchError(() => {
-          return this.aiRagService
-            .transcribeUploadedAudio(audioBlob, q.content || '', rubricSummary, 'mock', true)
-            .pipe(
-              map((mockRes) => {
-                s.status = 'transcript_review';
-                s.rawTranscript = mockRes.rawTranscript;
-                s.transcript = mockRes.correctedTranscript;
-                s.sttModel = mockRes.sttModel;
-                s.correctionModel = mockRes.correctionModel;
-                s.updatedAt = new Date().toISOString();
-                this.persistSessionsToStorage();
-                return { status: 'success', jobId: `job-stt-fallback-${Date.now()}` };
-              }),
-              catchError(() => {
-                s.status = 'transcript_review';
-                s.rawTranscript =
-                  'dạ thưa thầy em xin trình bày câu trả lời theo nội dung câu hỏi đã cho ạ';
-                s.transcript =
-                  q.sampleAnswer ||
-                  'Dạ thưa thầy, em xin trình bày câu trả lời theo nội dung câu hỏi đã cho ạ.';
-                s.updatedAt = new Date().toISOString();
-                this.persistSessionsToStorage();
-                return of({ status: 'success', jobId: `job-stt-local-${Date.now()}` });
-              }),
-            );
+        catchError((err) => {
+          console.error('Lỗi khi nhận diện giọng nói (STT):', err);
+          return throwError(
+            () =>
+              new Error(
+                `Lỗi khi chuyển đổi giọng nói thành văn bản: ${err?.message || 'Không thể kết nối đến AI Speech-to-Text service'}. Vui lòng kiểm tra AI Service.`,
+              ),
+          );
         }),
       );
   }
@@ -752,16 +831,19 @@ export class MockPracticeApi extends PracticeApi {
     s.status = 'grading';
     s.updatedAt = new Date().toISOString();
     this.persistSessionsToStorage();
-    return of({ ...s }).pipe(delay(100));
+    return of({ ...s }).pipe(delay(50));
   }
 
   override requestEvaluation(sessionId: string): Observable<{ status: string; jobId?: string }> {
     const s = this.ensureSession(sessionId);
-    const q = this.mockQuestions.find((item) => item.id === s.questionId) || this.mockQuestions[0];
-    const transcriptToGrade =
-      (s.transcript && s.transcript.trim()) ||
-      q.sampleAnswer ||
-      'Lập trình hướng đối tượng (OOP) dựa trên các đối tượng có thuộc tính và phương thức.';
+    const q = (s as any)._question || this.mockQuestions.find((item) => item.id === s.questionId) || this.mockQuestions[0];
+    const transcriptToGrade = s.transcript && s.transcript.trim();
+
+    if (!transcriptToGrade) {
+      return throwError(
+        () => new Error('Chưa có nội dung câu trả lời của sinh viên. Vui lòng nói hoặc xác nhận câu trả lời trước khi gửi chấm điểm.'),
+      );
+    }
 
     return this.aiRagService
       .evaluateSubmission({
@@ -782,13 +864,14 @@ export class MockPracticeApi extends PracticeApi {
           this.persistSessionsToStorage();
           return { status: 'success', jobId: `job-eval-${Date.now()}` };
         }),
-        catchError(() => {
-          s.status = 'completed';
-          s.transcript = transcriptToGrade;
-          s.evaluation = this.defaultFallbackEvaluation;
-          s.updatedAt = new Date().toISOString();
-          this.persistSessionsToStorage();
-          return of({ status: 'success', jobId: `job-eval-fallback-${Date.now()}` });
+        catchError((err) => {
+          console.error('Lỗi khi AI chấm điểm câu trả lời:', err);
+          return throwError(
+            () =>
+              new Error(
+                `Lỗi khi AI chấm điểm: ${err?.message || 'Không thể kết nối đến AI Evaluation Service'}. Vui lòng kiểm tra AI Service.`,
+              ),
+          );
         }),
       );
   }
@@ -796,48 +879,269 @@ export class MockPracticeApi extends PracticeApi {
   override getEvaluation(sessionId: string): Observable<Evaluation> {
     const s = this.ensureSession(sessionId);
     if (s.evaluation) {
-      return of(s.evaluation).pipe(delay(100));
+      return of(s.evaluation).pipe(delay(50));
     }
-    return of(this.defaultFallbackEvaluation).pipe(delay(100));
+    return throwError(() => new Error('Chưa có kết quả đánh giá cho phiên luyện tập này.'));
   }
 
   override getPracticeHistory(_userId?: string): Observable<PracticeSession[]> {
     return of([...this.mockSessions]).pipe(delay(200));
   }
 
+  override saveCourse(course: Partial<Course>): Observable<Course> {
+    const backendUrl = `${environment.apiBaseUrl}/courses`;
+    const isUuid = course.id && course.id.includes('-') && course.id.length > 20;
+    const payload = {
+      id: isUuid ? course.id : null,
+      code: (course.code || 'IT-NEW').toUpperCase().trim(),
+      name: (course.name || 'Học phần mới').trim(),
+      description: (course.description || '').trim(),
+      semester: (course.semester || 'Học kỳ 1 - 2026').trim(),
+      department: (course.department || 'Khoa Công nghệ Thông tin').trim(),
+    };
+
+    const req$ = isUuid
+      ? this.http.put<any>(`${backendUrl}/${course.id}`, payload)
+      : this.http.post<any>(backendUrl, payload);
+
+    return req$.pipe(
+      map((saved) => {
+        const courseObj: Course = {
+          id: String(saved.id),
+          code: saved.code,
+          name: saved.name,
+          description: saved.description || '',
+          semester: saved.semester || 'Học kỳ 1 - 2026',
+          department: saved.department || 'Khoa Công nghệ Thông tin',
+          questionCount: saved.questionCount || 0,
+          topics: saved.topics || [],
+          createdBy: saved.createdBy ? String(saved.createdBy) : undefined,
+          instructorName: saved.instructorName || 'TS. Nguyễn Luân (Khoa CNTT - ĐH Quy Nhơn)',
+        };
+        const idx = this.mockCourses.findIndex(
+          (c) => c.id === courseObj.id || c.code.toUpperCase() === courseObj.code.toUpperCase(),
+        );
+        if (idx !== -1) {
+          this.mockCourses[idx] = courseObj;
+        } else {
+          this.mockCourses.unshift(courseObj);
+        }
+        return courseObj;
+      }),
+      catchError((err) => {
+        console.error('Lỗi khi lưu học phần vào Backend Database:', err);
+        const errorMsg =
+          err?.error?.message ||
+          err?.message ||
+          'Không thể kết nối đến Backend Database (http://localhost:8080/api/courses). Vui lòng đảm bảo Backend đã chạy.';
+        return throwError(() => new Error(errorMsg));
+      }),
+    );
+  }
+
   override saveQuestion(question: Partial<Question>): Observable<Question> {
-    if (question.id) {
-      const idx = this.mockQuestions.findIndex((q) => q.id === question.id);
-      if (idx !== -1) {
-        this.mockQuestions[idx] = { ...this.mockQuestions[idx], ...question };
-        return of(this.mockQuestions[idx]).pipe(delay(250));
-      }
-    }
-    const saved: Question = {
-      id: question.id || `q-${Date.now()}`,
-      courseId: question.courseId || 'IT2030',
+    const isUuid = question.id && question.id.includes('-') && question.id.length > 20;
+    const backendUrl = `${environment.apiBaseUrl}/questions`;
+    const payload = {
+      id: isUuid ? question.id : null,
+      courseId: question.courseId,
       topic: question.topic || 'Chủ đề chung',
-      title: question.title || 'Câu hỏi mới',
+      title: question.title || (question.content ? question.content.substring(0, 60) + '...' : 'Câu hỏi'),
       content: question.content || '',
       sampleAnswer: question.sampleAnswer || '',
-      timeLimitSeconds: question.timeLimitSeconds || 180,
       difficulty: question.difficulty || 'medium',
-      tags: question.tags || ['CNPM'],
-      rubric: question.rubric,
+      timeLimitSeconds: question.timeLimitSeconds || 180,
+      tags: question.tags || [],
+      parentQuestionId: question.parentQuestionId || null,
     };
-    this.mockQuestions.unshift(saved);
-    const course = this.mockCourses.find((c) => c.id === saved.courseId);
-    if (course) {
-      course.questionCount = this.mockQuestions.filter((q) => q.courseId === course.id).length;
-    }
-    return of(saved).pipe(delay(250));
+
+    const req$ = isUuid
+      ? this.http.put<any>(`${backendUrl}/${question.id}`, payload)
+      : this.http.post<any>(backendUrl, payload);
+
+    return req$.pipe(
+      map((saved) => {
+        const q = this.mapServerQuestion(saved);
+        const idx = this.mockQuestions.findIndex((item) => item.id === q.id);
+        if (idx !== -1) {
+          this.mockQuestions[idx] = q;
+        } else {
+          this.mockQuestions.unshift(q);
+        }
+        return q;
+      }),
+      catchError((err) => {
+        console.error('Lỗi khi lưu câu hỏi vào Backend Database:', err);
+        const errorMsg =
+          err?.error?.message ||
+          err?.message ||
+          'Không thể lưu câu hỏi vào Backend Database. Vui lòng kiểm tra kết nối Backend.';
+        return throwError(() => new Error(errorMsg));
+      }),
+    );
   }
 
   override saveRubric(questionId: string, rubric: Rubric): Observable<Rubric> {
-    const q = this.mockQuestions.find((item) => item.id === questionId);
-    if (q) {
-      q.rubric = rubric;
+    const payload = {
+      criteria: rubric.criteria.map((c) => ({
+        name: c.name,
+        description: c.description,
+        maxScore: c.maxScore,
+      })),
+      totalScore: rubric.totalScore,
+      gradingInstructions: rubric.gradingInstructions || '',
+    };
+
+    return this.http
+      .put<any>(`${environment.apiBaseUrl}/questions/${questionId}/rubric`, payload)
+      .pipe(
+        map((res) => {
+          const updatedRubric: Rubric = {
+            id: String(res.id),
+            questionId,
+            totalScore: Number(res.totalScore) || 10.0,
+            gradingInstructions: res.gradingInstructions,
+            criteria: (res.criteria || []).map((c: any) => ({
+              id: String(c.id),
+              name: c.name,
+              description: c.description,
+              maxScore: Number(c.maxScore),
+            })),
+          };
+          const q = this.mockQuestions.find((item) => item.id === questionId);
+          if (q) {
+            q.rubric = updatedRubric;
+          }
+          return updatedRubric;
+        }),
+        catchError((err) => {
+          console.error('Lỗi khi lưu Rubric vào Backend Database:', err);
+          const errorMsg =
+            err?.error?.message ||
+            err?.message ||
+            'Không thể lưu Rubric vào Backend Database. Vui lòng kiểm tra kết nối Backend.';
+          return throwError(() => new Error(errorMsg));
+        }),
+      );
+  }
+
+  override extractQuestionsFromFile(
+    file: File,
+    courseId?: string,
+  ): Observable<QuestionExtractResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (courseId) {
+      formData.append('course_id', courseId);
     }
-    return of(rubric).pipe(delay(250));
+    const aiUrl = `${environment.aiServiceUrl || 'http://localhost:8000'}/ai/questions/extract-document`;
+
+    return this.http.post<any>(aiUrl, formData).pipe(
+      map((res) => {
+        const questions: ExtractedQuestion[] = (res.questions || []).map((q: any) => ({
+          tempId: q.temp_id || `temp-${Math.random().toString(36).substring(2, 7)}`,
+          code: q.code || '',
+          topic: q.topic || 'Chủ đề chung',
+          title: q.title || (q.content ? q.content.substring(0, 60) + '...' : 'Câu hỏi'),
+          content: q.content || '',
+          sampleAnswer: q.sample_answer || '',
+          difficulty: q.difficulty || 'medium',
+          timeLimitSeconds: q.time_limit_seconds || 180,
+          parentCode: q.parent_code || null,
+          isFollowup: !!q.is_followup,
+          tags: q.tags || [],
+          criteria: (q.criteria || []).map((c: any) => ({
+            name: c.name || '',
+            description: c.description || '',
+            maxScore: Number(c.max_score) || 2.5,
+          })),
+          totalScore: Number(q.total_score) || 10.0,
+          status: q.status || 'valid',
+          errors: q.errors || [],
+          warnings: q.warnings || [],
+        }));
+
+        return {
+          fileName: res.file_name || file.name,
+          totalDetected: res.total_detected ?? questions.length,
+          validCount: res.valid_count ?? questions.filter((x) => x.status === 'valid').length,
+          errorCount: res.error_count ?? questions.filter((x) => x.status === 'error').length,
+          warningCount:
+            res.warning_count ?? questions.filter((x) => x.status === 'warning').length,
+          questions,
+        };
+      }),
+      catchError((err) => {
+        console.error('Lỗi khi gọi AI service trích xuất tài liệu:', err);
+        return throwError(
+          () =>
+            new Error(
+              `Không thể kết nối đến AI Service (${aiUrl}). Vui lòng đảm bảo AI service đang chạy tại cổng 8000 (uvicorn app.main:app --port 8000). Chi tiết: ${err.message || 'Lỗi kết nối mạng'}`,
+            ),
+        );
+      }),
+    );
+  }
+
+  override commitBatchQuestions(
+    courseId: string,
+    questions: ExtractedQuestion[],
+  ): Observable<{ success: boolean; importedCount: number; message: string }> {
+    const payload = {
+      courseId,
+      questions: questions.map((q) => ({
+        code: q.code,
+        topic: q.topic,
+        title: q.title,
+        content: q.content,
+        sampleAnswer: q.sampleAnswer,
+        difficulty: q.difficulty,
+        timeLimitSeconds: q.timeLimitSeconds,
+        parentCode: q.parentCode || null,
+        tags: q.tags || [],
+        criteria: (q.criteria || []).map((c) => ({
+          name: c.name,
+          description: c.description,
+          maxScore: c.maxScore,
+        })),
+      })),
+    };
+
+    return this.http
+      .post<{ success: boolean; importedCount: number; message: string }>(
+        `${environment.apiBaseUrl}/questions/import/commit`,
+        payload,
+      )
+      .pipe(
+        map((res) => {
+          // Tự động đồng bộ lại danh sách câu hỏi từ database
+          this.getQuestions(courseId).subscribe();
+          return res;
+        }),
+        catchError((err) => {
+          console.error('Lỗi khi commit câu hỏi vào Backend DB:', err);
+          const errorMsg =
+            err?.error?.message ||
+            err?.message ||
+            'Không thể kết nối đến Backend Database (http://localhost:8080/api/questions/import/commit). Vui lòng đảm bảo Backend đã chạy.';
+          return throwError(() => new Error(errorMsg));
+        }),
+      );
+  }
+
+  override downloadExcelTemplate(): Observable<Blob> {
+    return this.http
+      .get('http://localhost:8080/api/questions/import/template', {
+        responseType: 'blob',
+      })
+      .pipe(
+        catchError(() => {
+          const fallback = new Blob(
+            ['Mã câu,Chương / Chủ đề,Tiêu đề tóm tắt,Nội dung câu hỏi,Câu trả lời mẫu,Độ khó,Thời gian (giây),Mã câu hỏi cha,Tiêu chí 1,Mô tả tiêu chí 1,Điểm tiêu chí 1,Tiêu chí 2,Mô tả tiêu chí 2,Điểm tiêu chí 2,Tiêu chí 3,Mô tả tiêu chí 3,Điểm tiêu chí 3\n'],
+            { type: 'text/csv;charset=utf-8;' },
+          );
+          return of(fallback);
+        }),
+      );
   }
 }

@@ -1,5 +1,13 @@
 import { Observable } from 'rxjs';
-import { Course, Question, Rubric, PracticeSession, Evaluation } from '../../shared/models';
+import {
+  Course,
+  Question,
+  Rubric,
+  PracticeSession,
+  Evaluation,
+  ExtractedQuestion,
+  QuestionExtractResult,
+} from '../../shared/models';
 
 export abstract class PracticeApi {
   abstract getCourses(): Observable<Course[]>;
@@ -16,6 +24,16 @@ export abstract class PracticeApi {
   abstract requestEvaluation(sessionId: string): Observable<{ status: string; jobId?: string }>;
   abstract getEvaluation(sessionId: string): Observable<Evaluation>;
   abstract getPracticeHistory(userId?: string): Observable<PracticeSession[]>;
+  abstract saveCourse(course: Partial<Course>): Observable<Course>;
   abstract saveQuestion(question: Partial<Question>): Observable<Question>;
   abstract saveRubric(questionId: string, rubric: Rubric): Observable<Rubric>;
+  abstract extractQuestionsFromFile(
+    file: File,
+    courseId?: string,
+  ): Observable<QuestionExtractResult>;
+  abstract commitBatchQuestions(
+    courseId: string,
+    questions: ExtractedQuestion[],
+  ): Observable<{ success: boolean; importedCount: number; message: string }>;
+  abstract downloadExcelTemplate(): Observable<Blob>;
 }

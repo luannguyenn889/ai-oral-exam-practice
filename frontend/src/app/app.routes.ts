@@ -122,39 +122,30 @@ export const routes: Routes = [
       {
         path: 'questions/new',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/instructor/question-editor/question-editor.component').then(
+            (m) => m.QuestionEditorComponent,
           ),
-        data: {
-          title: 'Thêm mới câu hỏi vấn đáp',
-          description: 'Soạn thảo nội dung câu hỏi và câu trả lời tham chiếu (Giai đoạn E).',
-          icon: 'note_add',
-        },
+      },
+      {
+        path: 'questions/import',
+        loadComponent: () =>
+          import('./features/instructor/question-import/question-import.component').then(
+            (m) => m.QuestionImportComponent,
+          ),
       },
       {
         path: 'questions/:questionId/edit',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/instructor/question-editor/question-editor.component').then(
+            (m) => m.QuestionEditorComponent,
           ),
-        data: {
-          title: 'Chỉnh sửa câu hỏi',
-          description: 'Cập nhật nội dung câu hỏi và câu trả lời tham chiếu.',
-          icon: 'edit',
-        },
       },
       {
         path: 'questions/:questionId/rubric',
         loadComponent: () =>
-          import('./shared/components/placeholder-page/placeholder-page.component').then(
-            (m) => m.PlaceholderPageComponent,
+          import('./features/instructor/rubric-editor/rubric-editor.component').then(
+            (m) => m.RubricEditorComponent,
           ),
-        data: {
-          title: 'Thiết lập Rubric chấm điểm',
-          description:
-            'Tạo các tiêu chí đánh giá, thang điểm và hướng dẫn chấm cho AI (Giai đoạn E).',
-          icon: 'fact_check',
-        },
       },
     ],
   },

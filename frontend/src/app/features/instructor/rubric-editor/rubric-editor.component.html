@@ -1,0 +1,255 @@
+<div class="rubric-page">
+  <!-- Header / Breadcrumbs -->
+  <header class="rubric-header">
+    <div class="rubric-header__nav">
+      <a routerLink="/instructor/questions" class="rubric-header__back-link">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Danh sách câu hỏi
+      </a>
+      <span class="rubric-header__separator">/</span>
+      <span class="rubric-header__current">Thiết lập Rubric chấm điểm</span>
+    </div>
+
+    <div class="rubric-header__title-row">
+      <div class="rubric-header__title-group">
+        <span class="material-symbols-outlined rubric-header__icon">fact_check</span>
+        <div>
+          <h1 class="rubric-header__title">Soạn thảo Rubric chấm điểm cho AI</h1>
+          <p class="rubric-header__subtitle">
+            Quy định các tiêu chí đánh giá, tỷ trọng điểm và hướng dẫn chi tiết giúp AI chấm điểm câu trả lời khách quan, chuẩn xác.
+          </p>
+        </div>
+      </div>
+
+      @if (question) {
+        <a
+          [routerLink]="['/instructor/questions', question.id, 'edit']"
+          class="btn btn--secondary"
+        >
+          <span class="material-symbols-outlined">edit</span>
+          Chỉnh sửa nội dung câu hỏi
+        </a>
+      }
+    </div>
+  </header>
+
+  @if (loading) {
+    <div class="rubric-loading">
+      <span class="material-symbols-outlined spin">progress_activity</span>
+      <span>Đang tải dữ liệu Rubric...</span>
+    </div>
+  } @else {
+    <!-- Question Context Banner -->
+    @if (question) {
+      <div class="card question-banner">
+        <div class="question-banner__meta">
+          @if (question.topic) {
+            <span class="badge badge--topic">{{ question.topic }}</span>
+          }
+          <span class="badge badge--diff badge--{{ question.difficulty || 'medium' }}">
+            {{
+              question.difficulty === 'easy'
+                ? 'Cơ bản'
+                : question.difficulty === 'hard'
+                  ? 'Nâng cao'
+                  : 'Trung bình'
+            }}
+          </span>
+          <span class="question-banner__time">
+            <span class="material-symbols-outlined">timer</span>
+            {{ question.timeLimitSeconds ? question.timeLimitSeconds / 60 + ' phút' : '3 phút' }}
+          </span>
+        </div>
+
+        <h2 class="question-banner__title">{{ question.title }}</h2>
+        <p class="question-banner__content">{{ question.content }}</p>
+      </div>
+    }
+
+    <!-- Live Total Score & Quick Actions Bar -->
+    <div
+      class="score-bar"
+      [class.score-bar--valid]="isTotalScoreValid"
+      [class.score-bar--invalid]="!isTotalScoreValid"
+    >
+      <div class="score-bar__info">
+        <div class="score-bar__stat">
+          <span class="score-bar__label">Tổng điểm Rubric:</span>
+          <span class="score-bar__value">
+            <strong>{{ currentTotalScore }}</strong> / 10.0 điểm
+          </span>
+        </div>
+
+        <div class="score-bar__badge-wrap">
+          @if (isTotalScoreValid) {
+            <span class="score-badge score-badge--success">
+              <span class="material-symbols-outlined">check_circle</span>
+              Thang điểm chuẩn 10/10
+            </span>
+          } @else {
+            <span class="score-badge score-badge--warning">
+              <span class="material-symbols-outlined">warning</span>
+              Lệch {{ (10 - currentTotalScore) > 0 ? '+' : '' }}{{ (10 - currentTotalScore) | number: '1.1-1' }}đ (Cần đúng 10.0đ)
+            </span>
+          }
+          <span class="score-bar__count">
+            ({{ criteria.length }} tiêu chí đánh giá)
+          </span>
+        </div>
+      </div>
+
+      <div class="score-bar__templates">
+        <span class="template-label">Mẫu nhanh:</span>
+        <button
+          type="button"
+          class="btn btn--sm btn--ghost"
+          (click)="applyDefault4CriteriaTemplate()"
+        >
+          Mẫu 4 tiêu chí (3 - 3 - 2.5 - 1.5)
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm btn--ghost"
+          (click)="apply3CriteriaTemplate()"
+        >
+          Mẫu 3 tiêu chí (4 - 3.5 - 2.5)
+        </button>
+      </div>
+    </div>
+
+    <!-- Danh sách tiêu chí Rubric -->
+    <main class="criteria-list">
+      @for (c of criteria; track c.id; let idx = $index) {
+        <div class="card criterion-card">
+          <div class="criterion-card__header">
+            <div class="criterion-card__index-group">
+              <span class="criterion-number">#{{ idx + 1 }}</span>
+              <input
+                type="text"
+                class="form-input criterion-title-input"
+                placeholder="Nhập tên tiêu chí..."
+                [(ngModel)]="c.name"
+              />
+            </div>
+
+            <div class="criterion-card__actions">
+              <div class="criterion-score-input">
+                <label [for]="'score-' + idx" class="score-label">Điểm tối đa:</label>
+                <input
+                  [id]="'score-' + idx"
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="10"
+                  class="form-input score-number"
+                  [(ngModel)]="c.maxScore"
+                />
+                <span class="score-unit">đ</span>
+              </div>
+
+              <!-- Nút di chuyển vị trí -->
+              <div class="order-buttons">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  title="Di chuyển lên"
+                  [disabled]="idx === 0"
+                  (click)="moveUp(idx)"
+                >
+                  <span class="material-symbols-outlined">arrow_upward</span>
+                </button>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  title="Di chuyển xuống"
+                  [disabled]="idx === criteria.length - 1"
+                  (click)="moveDown(idx)"
+                >
+                  <span class="material-symbols-outlined">arrow_downward</span>
+                </button>
+              </div>
+
+              <!-- Nút xóa tiêu chí -->
+              <button
+                type="button"
+                class="icon-btn icon-btn--danger"
+                title="Xóa tiêu chí này"
+                (click)="removeCriterion(idx)"
+              >
+                <span class="material-symbols-outlined">delete</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="criterion-card__body">
+            <label [for]="'desc-' + idx" class="form-label">
+              Hướng dẫn chi tiết cho AI chấm (Grading Guidance)
+            </label>
+            <p class="form-hint">
+              Mô tả các luận điểm hoặc tiêu chuẩn cụ thể để sinh viên đạt trọn điểm của tiêu chí này.
+            </p>
+            <textarea
+              [id]="'desc-' + idx"
+              rows="3"
+              class="form-textarea"
+              placeholder="VD: Trình bày chính xác định nghĩa A (1.5đ), phân biệt được A với B (1.0đ), nêu được trường hợp biên (0.5đ)..."
+              [(ngModel)]="c.description"
+            ></textarea>
+          </div>
+        </div>
+      }
+
+      <!-- Thêm tiêu chí mới -->
+      <div class="add-criterion-area">
+        <button
+          type="button"
+          class="btn btn--secondary btn--lg add-btn"
+          (click)="addCriterion()"
+        >
+          <span class="material-symbols-outlined">add_circle</span>
+          Thêm tiêu chí đánh giá mới
+        </button>
+      </div>
+
+      <!-- Card Hướng dẫn chung chấm điểm cho AI -->
+      <section class="card instructions-card">
+        <h3 class="instructions-card__title">
+          <span class="material-symbols-outlined">settings_suggest</span>
+          Chỉ dẫn chung cho AI (Prompt Instructions)
+        </h3>
+        <p class="form-hint">
+          Lời nhắc tổng quan định hướng AI cách chấm (độ khắt khe, lưu ý lỗi phổ biến, thái độ phản hồi).
+        </p>
+        <textarea
+          rows="3"
+          class="form-textarea"
+          [(ngModel)]="gradingInstructions"
+          placeholder="Nhập hướng dẫn tổng quan cho AI khi chấm điểm ca thi này..."
+        ></textarea>
+      </section>
+
+      <!-- Bottom Sticky Save Bar -->
+      <div class="bottom-actions card">
+        <div class="bottom-actions__left">
+          <a routerLink="/instructor/questions" class="btn btn--ghost">
+            <span class="material-symbols-outlined">arrow_back</span>
+            Quay lại ngân hàng câu hỏi
+          </a>
+        </div>
+
+        <div class="bottom-actions__right">
+          <button
+            type="button"
+            class="btn btn--primary btn--lg"
+            [disabled]="saving || !isTotalScoreValid"
+            (click)="saveRubric()"
+          >
+            <span class="material-symbols-outlined">save</span>
+            Lưu Rubric chấm điểm
+          </button>
+        </div>
+      </div>
+    </main>
+  }
+</div>
+

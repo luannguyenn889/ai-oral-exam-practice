@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import evaluations, rag, transcriptions
+from app.routers import evaluations, question_import, rag, transcriptions
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(transcriptions.router)
 app.include_router(evaluations.router)
 app.include_router(rag.router)
+app.include_router(question_import.router)
 
 
 @app.get("/health", tags=["operations"])

@@ -32,6 +32,7 @@ export interface Course {
   semester?: string;
   department?: string;
   topics?: string[];
+  createdBy?: string;
 }
 
 export interface RubricCriterion {
@@ -46,6 +47,7 @@ export interface Rubric {
   questionId: string;
   criteria: RubricCriterion[];
   totalScore: number;
+  gradingInstructions?: string;
 }
 
 export interface Question {
@@ -59,6 +61,42 @@ export interface Question {
   timeLimitSeconds?: number;
   difficulty?: 'easy' | 'medium' | 'hard';
   tags?: string[];
+  parentQuestionId?: string | null;
+}
+
+export interface ImportCriterion {
+  name: string;
+  description: string;
+  maxScore: number;
+}
+
+export interface ExtractedQuestion {
+  tempId: string;
+  code: string;
+  topic: string;
+  title: string;
+  content: string;
+  sampleAnswer: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  timeLimitSeconds: number;
+  parentCode?: string | null;
+  isFollowup: boolean;
+  tags: string[];
+  criteria: ImportCriterion[];
+  totalScore: number;
+  gradingInstructions?: string;
+  status: 'valid' | 'warning' | 'error';
+  errors: string[];
+  warnings: string[];
+}
+
+export interface QuestionExtractResult {
+  fileName: string;
+  totalDetected: number;
+  validCount: number;
+  errorCount: number;
+  warningCount: number;
+  questions: ExtractedQuestion[];
 }
 
 export interface CriterionEvaluation {
@@ -81,6 +119,7 @@ export interface RagReference {
 
 export interface Evaluation {
   totalScore: number;
+  gradingInstructions?: string;
   maxScore: number;
   summary?: string;
   criteria: CriterionEvaluation[];
