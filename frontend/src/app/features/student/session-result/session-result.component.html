@@ -1,0 +1,251 @@
+<div class="result-page">
+  @if (loading) {
+    <app-skeleton variant="card"></app-skeleton>
+    <app-skeleton variant="card"></app-skeleton>
+  } @else if (error || !session || !evaluation) {
+    <app-error-state
+      title="Không tìm thấy kết quả chấm điểm"
+      [message]="error || 'Phiên luyện tập chưa có kết quả chấm điểm.'"
+      (retry)="loadResult()"
+    ></app-error-state>
+  } @else {
+    <header class="result-header">
+      <a
+        [routerLink]="['/student/courses', session.courseId || 'IT2030', 'questions']"
+        class="result-header__back"
+      >
+        <span class="material-symbols-outlined">arrow_back</span>
+        Ngân hàng câu hỏi ({{ session.courseId || 'IT2030' }})
+      </a>
+
+      <div class="step-indicator">
+        <span class="step-pill step-pill--done">Bước 1: Ghi âm</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill step-pill--done">Bước 2: Xác nhận Transcript</span>
+        <span class="material-symbols-outlined">chevron_right</span>
+        <span class="step-pill step-pill--active">Bước 3: Kết quả & Dẫn chứng RAG</span>
+      </div>
+    </header>
+
+    <!-- Khối 1: Điểm tổng + Nhận xét tổng quan + Nghe giọng đọc AI (TTS) -->
+    <section class="score-hero">
+      <div class="score-hero__left">
+        <span class="score-hero__label">KẾT QUẢ ĐÁNH GIÁ VẤN ĐÁP AI</span>
+        <div class="score-hero__number">
+          {{ evaluation.totalScore }}
+          <span class="score-hero__max">/ {{ evaluation.maxScore }}</span>
+        </div>
+        <span class="score-hero__grade">
+          {{ getGradeLabel(evaluation.totalScore, evaluation.maxScore) }}
+        </span>
+      </div>
+
+      <div class="score-hero__right">
+        <div class="score-hero__question-title">
+          {{ question?.title || session.questionTitle }}
+        </div>
+        <p class="score-hero__summary">
+          {{
+            evaluation.summary ||
+              'Hệ thống AI đã đối chiếu câu trả lời của bạn với Rubric và tài liệu giáo trình môn học.'
+          }}
+        </p>
+
+        <div class="score-hero__actions">
+          <button type="button" class="btn tts-btn" (click)="toggleTtsFeedback()">
+            <span class="material-symbols-outlined">
+              {{ isSpeaking ? 'stop_circle' : 'volume_up' }}
+            </span>
+            {{
+              isSpeaking
+                ? 'Dừng đọc nhận xét'
+                : 'Nghe Giảng viên AI đọc nhận xét (TTS Tiếng Việt)'
+            }}
+          </button>
+
+          @if (evaluation.llmModel) {
+            <span class="model-tag">
+              Model chấm: {{ evaluation.llmModel }} · Waktu:
+              {{ evaluation.processingTimeMs || 1800 }}ms
+            </span>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Khối 2: Bảng điểm chi tiết theo từng tiêu chí Rubric -->
+    <section class="card">
+      <h2 class="section-heading">
+        <span class="material-symbols-outlined">fact_check</span>
+        Bảng điểm chi tiết theo từng tiêu chí Rubric ({{ evaluation.criteria.length }} tiêu chí)
+      </h2>
+
+      <div class="criteria-list">
+        @for (c of evaluation.criteria; track c.criterionId; let i = $index) {
+          <div class="criterion-card">
+            <div class="criterion-card__top">
+              <div class="criterion-card__title">
+                {{ getCriterionName(c.criterionId, i) }}
+              </div>
+              <div class="criterion-card__score">
+                <strong>{{ c.score }}</strong> / {{ c.maxScore }} điểm
+              </div>
+            </div>
+
+            <div class="progress-bar">
+              <div
+                class="progress-bar__fill"
+                [style.width.%]="getScorePercent(c)"
+                [class.progress-bar__fill--high]="getScorePercent(c) >= 75"
+                [class.progress-bar__fill--mid]="
+                  getScorePercent(c) >= 40 && getScorePercent(c) < 75
+                "
+                [class.progress-bar__fill--low]="getScorePercent(c) < 40"
+              ></div>
+            </div>
+
+            @if (c.evidence) {
+              <div class="criterion-evidence">
+                <strong>Bằng chứng trong câu trả lời của bạn:</strong>
+                <span>"{{ c.evidence }}"</span>
+              </div>
+            }
+
+            @if (c.feedback) {
+              <p class="criterion-feedback">{{ c.feedback }}</p>
+            }
+
+            @if (c.missingOrIncorrect && c.missingOrIncorrect.length > 0) {
+              <ul class="criterion-missing">
+                @for (m of c.missingOrIncorrect; track m) {
+                  <li>⚠️ {{ m }}</li>
+                }
+              </ul>
+            }
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- Khối 3: Điểm mạnh, Điểm yếu & Gợi ý cải thiện (Theo đúng bộ Prompt speed-to-text-demo) -->
+    <div class="feedback-grid">
+      <section class="card feedback-card feedback-card--strengths">
+        <h3 class="feedback-card__title">
+          <span class="material-symbols-outlined">thumb_up</span>
+          Điểm mạnh trong câu trả lời
+        </h3>
+        <ul class="feedback-list">
+          @for (s of evaluation.strengths; track s) {
+            <li>✅ {{ s }}</li>
+          }
+        </ul>
+      </section>
+
+      @if (evaluation.weaknesses && evaluation.weaknesses.length > 0) {
+        <section class="card feedback-card feedback-card--weaknesses">
+          <h3 class="feedback-card__title">
+            <span class="material-symbols-outlined">warning</span>
+            Điểm thiếu sót so với giáo trình
+          </h3>
+          <ul class="feedback-list">
+            @for (w of evaluation.weaknesses; track w) {
+              <li>🔸 {{ w }}</li>
+            }
+          </ul>
+        </section>
+      }
+
+      <section class="card feedback-card feedback-card--improvements">
+        <h3 class="feedback-card__title">
+          <span class="material-symbols-outlined">tips_and_updates</span>
+          Gợi ý cải thiện để đạt điểm tối đa
+        </h3>
+        <ul class="feedback-list">
+          @for (imp of evaluation.improvements; track imp) {
+            <li>💡 {{ imp }}</li>
+          }
+        </ul>
+      </section>
+    </div>
+
+    <!-- Khối 4: Dẫn chứng từ Giáo trình môn học (Hybrid RAG Citations) -->
+    <section class="card rag-citations-card">
+      <h2 class="section-heading">
+        <span class="material-symbols-outlined">menu_book</span>
+        Dẫn chứng trích xuất từ Giáo trình môn học (Hybrid RAG: Dense + BM25 + RRF)
+      </h2>
+      <p class="section-sub">
+        Dưới đây là các đoạn kiến thức chuẩn trong tài liệu môn
+        <strong>{{ session.courseId || 'IT2030' }}</strong> được AI truy xuất để đối chiếu khi chấm
+        bài làm của bạn:
+      </p>
+
+      @if (!evaluation.ragReferences || evaluation.ragReferences.length === 0) {
+        <div class="empty-rag">
+          Chưa có đoạn trích dẫn giáo trình nào cho câu hỏi này.
+        </div>
+      } @else {
+        <div class="rag-ref-list">
+          @for (ref of evaluation.ragReferences; track ref.chunkId; let idx = $index) {
+            <div class="rag-ref-item">
+              <div class="rag-ref-item__header">
+                <span class="rag-ref-item__source">
+                  📖 [Đoạn trích {{ idx + 1 }}] Nguồn: {{ ref.source }}
+                </span>
+                <div class="rag-ref-item__badges">
+                  <span class="rag-pill">Phương thức: {{ ref.retrievedBy }}</span>
+                  @if (ref.denseSim !== null && ref.denseSim !== undefined) {
+                    <span class="rag-pill">Cosine: {{ ref.denseSim }}</span>
+                  }
+                  <span class="rag-pill rag-pill--rrf">RRF Score: {{ ref.rrfScore }}</span>
+                </div>
+              </div>
+              <blockquote class="rag-ref-item__quote">{{ ref.textPreview }}</blockquote>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- Khối 5: Bản ghi câu trả lời của sinh viên & Đáp án mẫu tham khảo -->
+    <div class="comparison-grid">
+      <section class="card">
+        <h3 class="section-heading">
+          <span class="material-symbols-outlined">record_voice_over</span>
+          Câu trả lời bạn đã nộp
+        </h3>
+        <p class="comparison-text">"{{ session.transcript }}"</p>
+      </section>
+
+      @if (question?.sampleAnswer) {
+        <section class="card">
+          <h3 class="section-heading">
+            <span class="material-symbols-outlined">verified</span>
+            Đáp án chuẩn tham khảo của Giảng viên
+          </h3>
+          <p class="comparison-text">{{ question?.sampleAnswer }}</p>
+        </section>
+      }
+    </div>
+
+    <!-- Điều hướng cuối trang -->
+    <div class="result-footer-actions">
+      <a [routerLink]="['/student/practice', session.questionId]" class="btn btn--secondary btn--lg">
+        <span class="material-symbols-outlined">replay</span>
+        Luyện tập lại câu hỏi này
+      </a>
+      <a
+        [routerLink]="['/student/courses', session.courseId || 'IT2030', 'questions']"
+        class="btn btn--primary btn--lg"
+      >
+        <span class="material-symbols-outlined">quiz</span>
+        Chọn câu hỏi tiếp theo
+      </a>
+      <a routerLink="/student/history" class="btn btn--ghost btn--lg">
+        <span class="material-symbols-outlined">history</span>
+        Xem lịch sử luyện tập
+      </a>
+    </div>
+  }
+</div>
+

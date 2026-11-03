@@ -1,4 +1,4 @@
-// Models defined according to KE_HOACH_FRONTEND_ANGULAR.md and QUY_TAC_THIET_KE_FE.md
+// Models defined according to KE_HOACH_FRONTEND_ANGULAR.md, QUY_TAC_THIET_KE_FE.md, and KE_HOACH_GIAO_DIEN_THEO_VAI_TRO_AI_RAG.md
 
 export type PracticeStatus =
   | 'draft'
@@ -32,6 +32,7 @@ export interface Course {
   semester?: string;
   department?: string;
   topics?: string[];
+  createdBy?: string;
 }
 
 export interface RubricCriterion {
@@ -46,6 +47,7 @@ export interface Rubric {
   questionId: string;
   criteria: RubricCriterion[];
   totalScore: number;
+  gradingInstructions?: string;
 }
 
 export interface Question {
@@ -59,6 +61,42 @@ export interface Question {
   timeLimitSeconds?: number;
   difficulty?: 'easy' | 'medium' | 'hard';
   tags?: string[];
+  parentQuestionId?: string | null;
+}
+
+export interface ImportCriterion {
+  name: string;
+  description: string;
+  maxScore: number;
+}
+
+export interface ExtractedQuestion {
+  tempId: string;
+  code: string;
+  topic: string;
+  title: string;
+  content: string;
+  sampleAnswer: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  timeLimitSeconds: number;
+  parentCode?: string | null;
+  isFollowup: boolean;
+  tags: string[];
+  criteria: ImportCriterion[];
+  totalScore: number;
+  gradingInstructions?: string;
+  status: 'valid' | 'warning' | 'error';
+  errors: string[];
+  warnings: string[];
+}
+
+export interface QuestionExtractResult {
+  fileName: string;
+  totalDetected: number;
+  validCount: number;
+  errorCount: number;
+  warningCount: number;
+  questions: ExtractedQuestion[];
 }
 
 export interface CriterionEvaluation {
@@ -70,30 +108,100 @@ export interface CriterionEvaluation {
   feedback: string;
 }
 
+export interface RagReference {
+  chunkId: string;
+  source: string;
+  retrievedBy: string;
+  denseSim?: number | null;
+  rrfScore: number;
+  textPreview: string;
+}
+
 export interface Evaluation {
   totalScore: number;
+  gradingInstructions?: string;
   maxScore: number;
+  summary?: string;
   criteria: CriterionEvaluation[];
   strengths: string[];
+  weaknesses?: string[];
   improvements: string[];
   uncertaintyNotes: string[];
   needsHumanReview: boolean;
+  ragReferences?: RagReference[];
+  llmModel?: string;
+  embeddingModel?: string;
+  processingTimeMs?: number;
 }
 
 export interface PracticeSession {
   id: string;
   questionId: string;
+  courseId?: string;
   questionTitle?: string;
   courseName?: string;
   userId: string;
   status: PracticeStatus;
   audioDurationSeconds?: number;
   audioUrl?: string;
+  rawTranscript?: string;
   transcript?: string;
+  sttModel?: string;
+  correctionModel?: string;
   isTranscriptConfirmed: boolean;
   evaluation?: Evaluation;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RagStatus {
+  courseId: string;
+  status: string;
+  totalChunks: number;
+  totalFiles: number;
+  files: string[];
+  embeddingModel: string;
+  rerankerModel: string;
+  hybridBm25Active: boolean;
+  searchModesAvailable: string[];
+  features: string[];
+  error?: string | null;
+}
+
+export interface RagChunkResult {
+  chunkId: string;
+  source: string;
+  courseId: string;
+  index: number;
+  text: string;
+  retrievedBy: string;
+  denseSim?: number | null;
+  bm25Score?: number | null;
+  rrfScore: number;
+  rerankScore?: number | null;
+  method: string;
+}
+
+export interface RagSearchResponse {
+  courseId: string;
+  queryText: string;
+  cleanedQuery: string;
+  searchMode: string;
+  topK: number;
+  results: RagChunkResult[];
+  formattedContext: string;
+}
+
+export interface AiHealthStatus {
+  status: string;
+  service: string;
+  version: string;
+  defaultSttProvider: string;
+  defaultLlmModel: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  geminiKeyConfigured: boolean;
+  groqKeyConfigured: boolean;
 }
 
 export interface ApiError {
@@ -101,4 +209,13 @@ export interface ApiError {
   message: string;
   details?: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface DriveDocument {
+  id: string;
+  title: string;
+  driveUrl: string;
+  description?: string;
+  courseId: string;
+  createdAt: string;
 }

@@ -1,0 +1,271 @@
+<div class="editor-page">
+  <!-- Header / Breadcrumbs -->
+  <header class="editor-header">
+    <div class="editor-header__nav">
+      <a routerLink="/instructor/questions" class="editor-header__back-link">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Danh sách câu hỏi
+      </a>
+      <span class="editor-header__separator">/</span>
+      <span class="editor-header__current">
+        {{ isEditMode ? 'Chỉnh sửa câu hỏi' : 'Thêm mới câu hỏi vấn đáp' }}
+      </span>
+    </div>
+
+    <div class="editor-header__title-row">
+      <div class="editor-header__title-group">
+        <span class="material-symbols-outlined editor-header__icon">
+          {{ isEditMode ? 'edit_note' : 'note_add' }}
+        </span>
+        <div>
+          <h1 class="editor-header__title">
+            {{ isEditMode ? 'Cập nhật câu hỏi thi vấn đáp' : 'Soạn thảo câu hỏi thi vấn đáp mới' }}
+          </h1>
+          <p class="editor-header__subtitle">
+            Cung cấp nội dung phát vấn cho AI, đáp án mẫu và các tham số kỹ thuật trước khi thiết lập Rubric chấm điểm.
+          </p>
+        </div>
+      </div>
+
+      @if (isEditMode && questionId) {
+        <a
+          [routerLink]="['/instructor/questions', questionId, 'rubric']"
+          class="btn btn--secondary"
+        >
+          <span class="material-symbols-outlined">fact_check</span>
+          Soạn Rubric chấm điểm
+        </a>
+      }
+    </div>
+  </header>
+
+  @if (loading) {
+    <div class="editor-loading">
+      <span class="material-symbols-outlined spin">progress_activity</span>
+      <span>Đang tải thông tin câu hỏi...</span>
+    </div>
+  } @else {
+    <div class="editor-body">
+      <!-- Cột chính: Thông tin câu hỏi -->
+      <main class="editor-main">
+        <!-- Card 1: Thông tin học phần & Phân loại -->
+        <section class="card form-section">
+          <h2 class="form-section__title">
+            <span class="material-symbols-outlined">school</span>
+            Học phần & Chủ đề
+          </h2>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="course-select" class="form-label">
+                Môn học <span class="required">*</span>
+              </label>
+              <select
+                id="course-select"
+                class="form-select"
+                [(ngModel)]="courseId"
+                name="courseId"
+              >
+                <option value="" disabled>-- Chọn môn học --</option>
+                @for (c of courses; track c.id) {
+                  <option [value]="c.id">
+                    {{ c.code }} - {{ c.name }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="topic-input" class="form-label">
+                Chủ đề / Nhóm kiến thức
+              </label>
+              <input
+                id="topic-input"
+                type="text"
+                class="form-input"
+                placeholder="VD: Thiết kế OOP & SOLID, Chu trình Scrum..."
+                [(ngModel)]="topic"
+                name="topic"
+              />
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 2: Nội dung câu hỏi phát vấn -->
+        <section class="card form-section">
+          <h2 class="form-section__title">
+            <span class="material-symbols-outlined">record_voice_over</span>
+            Nội dung câu hỏi phát vấn
+          </h2>
+
+          <div class="form-group">
+            <label for="question-title" class="form-label">
+              Tiêu đề tóm tắt câu hỏi <span class="required">*</span>
+            </label>
+            <input
+              id="question-title"
+              type="text"
+              class="form-input"
+              placeholder="VD: Trình bày và phân tích nguyên lý Single Responsibility (SRP)..."
+              [(ngModel)]="title"
+              name="title"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="question-prompt" class="form-label">
+              Nội dung phát vấn chi tiết của Giảng viên / AI <span class="required">*</span>
+            </label>
+            <p class="form-hint">
+              Nội dung này sẽ được đọc và hiển thị cho sinh viên khi bắt đầu ca thi vấn đáp.
+            </p>
+            <textarea
+              id="question-prompt"
+              rows="5"
+              class="form-textarea"
+              placeholder="Nhập toàn bộ câu hỏi và các yêu cầu cụ thể dành cho thí sinh..."
+              [(ngModel)]="content"
+              name="content"
+            ></textarea>
+          </div>
+        </section>
+
+        <!-- Card 3: Đáp án tham chiếu / Reference Answer -->
+        <section class="card form-section">
+          <div class="form-section__header-row">
+            <h2 class="form-section__title">
+              <span class="material-symbols-outlined">psychology</span>
+              Câu trả lời tham chiếu / Đáp án mẫu (Reference Answer)
+            </h2>
+            <span class="badge badge--info">Dành cho AI RAG đối chiếu</span>
+          </div>
+
+          <p class="form-hint">
+            Hệ thống AI sẽ kết hợp câu trả lời tham chiếu này cùng tài liệu giáo trình RAG để đối chiếu và chấm điểm cho câu trả lời của sinh viên.
+          </p>
+
+          <div class="form-group">
+            <textarea
+              id="sample-answer"
+              rows="6"
+              class="form-textarea"
+              placeholder="Nêu các luận điểm chính, từ khóa cốt lõi, ví dụ thực tế mà thí sinh cần đạt được để có điểm tối đa..."
+              [(ngModel)]="sampleAnswer"
+              name="sampleAnswer"
+            ></textarea>
+          </div>
+        </section>
+      </main>
+
+      <!-- Cột phụ: Cài đặt tham số & Thao tác -->
+      <aside class="editor-aside">
+        <section class="card config-card">
+          <h2 class="config-card__title">
+            <span class="material-symbols-outlined">tune</span>
+            Cài đặt tham số
+          </h2>
+
+          <!-- Độ khó -->
+          <div class="form-group">
+            <label class="form-label">Mức độ khó</label>
+            <div class="difficulty-options">
+              <button
+                type="button"
+                class="diff-btn"
+                [class.diff-btn--active]="difficulty === 'easy'"
+                (click)="setDifficulty('easy')"
+              >
+                Cơ bản
+              </button>
+              <button
+                type="button"
+                class="diff-btn"
+                [class.diff-btn--active]="difficulty === 'medium'"
+                (click)="setDifficulty('medium')"
+              >
+                Trung bình
+              </button>
+              <button
+                type="button"
+                class="diff-btn"
+                [class.diff-btn--active]="difficulty === 'hard'"
+                (click)="setDifficulty('hard')"
+              >
+                Nâng cao
+              </button>
+            </div>
+          </div>
+
+          <!-- Thời lượng trả lời -->
+          <div class="form-group">
+            <label for="time-limit" class="form-label">
+              Thời gian trả lời tối đa (phút)
+            </label>
+            <div class="time-input-group">
+              <input
+                id="time-limit"
+                type="number"
+                min="1"
+                max="15"
+                class="form-input"
+                [(ngModel)]="timeLimitMinutes"
+                name="timeLimitMinutes"
+              />
+              <span class="time-unit">phút ({{ (timeLimitMinutes || 0) * 60 }} giây)</span>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div class="form-group">
+            <label for="tags-input" class="form-label">
+              Từ khóa / Tags phân loại
+            </label>
+            <input
+              id="tags-input"
+              type="text"
+              class="form-input"
+              placeholder="VD: SOLID, CleanCode, OOP (cách nhau bởi dấu phẩy)"
+              [(ngModel)]="tagsString"
+              name="tagsString"
+            />
+          </div>
+        </section>
+
+        <!-- Thao tác Lưu & Soạn Rubric -->
+        <section class="card action-card">
+          <h3 class="action-card__title">Hành động</h3>
+
+          <div class="action-card__buttons">
+            <button
+              type="button"
+              class="btn btn--primary btn--block"
+              [disabled]="saving"
+              (click)="save(true)"
+            >
+              <span class="material-symbols-outlined">fact_check</span>
+              {{ isEditMode ? 'Lưu & Sang soạn Rubric' : 'Lưu & Tạo Rubric chấm điểm' }}
+            </button>
+
+            <button
+              type="button"
+              class="btn btn--secondary btn--block"
+              [disabled]="saving"
+              (click)="save(false)"
+            >
+              <span class="material-symbols-outlined">save</span>
+              {{ isEditMode ? 'Lưu cập nhật' : 'Lưu câu hỏi' }}
+            </button>
+
+            <a
+              routerLink="/instructor/questions"
+              class="btn btn--ghost btn--block text-center"
+            >
+              Hủy bỏ / Quay lại
+            </a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  }
+</div>
+

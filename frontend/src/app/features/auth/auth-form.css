@@ -46,6 +46,20 @@
   box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
+.auth-card__logo-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 auto var(--space-3);
+}
+
+.auth-card__logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.08));
+}
+
 .auth-card__icon .material-symbols-outlined {
   font-size: 28px;
 }

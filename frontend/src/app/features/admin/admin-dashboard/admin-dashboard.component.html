@@ -1,0 +1,95 @@
+<div class="admin-page">
+  <header class="admin-header">
+    <div>
+      <span class="admin-badge">
+        <span class="material-symbols-outlined">admin_panel_settings</span>
+        Quản trị Hệ thống & Giám sát AI
+      </span>
+      <h1 class="admin-title">Tổng quan Hệ thống & Trạng thái AI Service</h1>
+      <p class="admin-sub">
+        Theo dõi trạng thái hoạt động của Microservice AI (STT, Contextual Spell Correction, Hybrid
+        RAG ChromaDB + BM25) và cấu hình bảo mật từ <code>.env</code>.
+      </p>
+    </div>
+
+    <button type="button" class="btn btn--primary" (click)="checkSystemStatus()">
+      <span class="material-symbols-outlined">refresh</span>
+      Kiểm tra lại trạng thái
+    </button>
+  </header>
+
+  @if (loading) {
+    <div class="admin-grid">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (offlineError) {
+    <section class="card status-banner status-banner--offline">
+      <span class="material-symbols-outlined">cloud_off</span>
+      <div>
+        <h2>AI Service đang ngoại tuyến (Offline)</h2>
+        <p>{{ offlineError }}</p>
+      </div>
+    </section>
+  } @else if (health) {
+    <section class="card status-banner status-banner--online">
+      <span class="material-symbols-outlined">verified_user</span>
+      <div>
+        <h2>AI Service ({{ health.service }} v{{ health.version }}) đang hoạt động ổn định</h2>
+        <p>
+          Cấu hình bảo mật API Key và tham số Hybrid RAG được quản lý tập trung qua file
+          <code>ai-service/.env</code>.
+        </p>
+      </div>
+    </section>
+
+    <div class="admin-grid">
+      <div class="card admin-stat-card">
+        <h3>Cấu hình Nhận dạng Giọng nói (STT)</h3>
+        <div class="admin-kv">
+          <span>Provider mặc định:</span>
+          <strong>{{ health.defaultSttProvider | uppercase }} (whisper-large-v3)</strong>
+        </div>
+        <div class="admin-kv">
+          <span>Trạng thái GROQ_API_KEY:</span>
+          <span [class.key-ok]="health.groqKeyConfigured" [class.key-missing]="!health.groqKeyConfigured">
+            {{ health.groqKeyConfigured ? 'Đã cấu hình (.env)' : 'Chưa cấu hình' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="card admin-stat-card">
+        <h3>Cấu hình Chấm điểm & Hiệu đính (LLM)</h3>
+        <div class="admin-kv">
+          <span>Model mặc định:</span>
+          <strong>{{ health.defaultLlmModel }}</strong>
+        </div>
+        <div class="admin-kv">
+          <span>Trạng thái GEMINI_API_KEY:</span>
+          <span
+            [class.key-ok]="health.geminiKeyConfigured"
+            [class.key-missing]="!health.geminiKeyConfigured"
+          >
+            {{ health.geminiKeyConfigured ? 'Đã cấu hình (.env)' : 'Chưa cấu hình' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="card admin-stat-card">
+        <h3>Kho tri thức Giáo trình (Hybrid RAG)</h3>
+        <div class="admin-kv">
+          <span>Embedding Model:</span>
+          <strong>{{ health.embeddingModel }}</strong>
+        </div>
+        <div class="admin-kv">
+          <span>Học phần mẫu (IT2030):</span>
+          <strong>
+            {{ ragStatus?.totalFiles || 0 }} tài liệu · {{ ragStatus?.totalChunks || 0 }} chunks
+          </strong>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+

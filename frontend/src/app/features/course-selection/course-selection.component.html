@@ -4,12 +4,17 @@
     <div class="page-header__content">
       <span class="page-header__badge">
         <span class="material-symbols-outlined">school</span>
-        Kỳ thi vấn đáp AI
+        {{ isInstructorMode ? 'Cổng Giảng viên — Quản lý Học phần & RAG' : 'Kỳ thi vấn đáp AI' }}
       </span>
-      <h1 class="page-header__title">Danh sách học phần ôn luyện</h1>
+      <h1 class="page-header__title">
+        {{ isInstructorMode ? 'Quản lý Học phần & Giáo trình RAG' : 'Danh sách học phần ôn luyện' }}
+      </h1>
       <p class="page-header__subtitle">
-        Lựa chọn học phần bạn muốn ôn thi. Hệ thống cung cấp câu hỏi theo từng chủ đề cùng tiêu chí
-        chấm (Rubric) chi tiết để AI phân tích và phản hồi.
+        {{
+          isInstructorMode
+            ? 'Nạp tài liệu giáo trình (.pdf, .docx, .txt) vào kho tri thức Hybrid RAG (Dense + BM25 + RRF) và biên soạn ngân hàng câu hỏi, Rubric chấm điểm cho từng học phần.'
+            : 'Lựa chọn học phần bạn muốn ôn thi. Hệ thống cung cấp câu hỏi theo từng chủ đề cùng tiêu chí chấm (Rubric) chi tiết và đối chiếu giáo trình bằng AI.'
+        }}
       </p>
     </div>
   </header>
@@ -33,12 +38,21 @@
 
     <div class="filter-bar__actions">
       <span class="filter-bar__meta"> Hiển thị {{ filteredCourses.length }} học phần </span>
+      @if (isInstructorMode) {
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openCreateModal()"
+        >
+          <span class="material-symbols-outlined">add_circle</span>
+          Thêm học phần mới
+        </button>
+      }
     </div>
   </div>
 
   <!-- Content States -->
   @if (loading) {
-    <!-- Skeleton Loading State theo muc 6.2 QUY_TAC_THIET_KE_FE.md -->
     <div class="courses-grid">
       <app-skeleton variant="card"></app-skeleton>
       <app-skeleton variant="card"></app-skeleton>
@@ -46,23 +60,20 @@
       <app-skeleton variant="card"></app-skeleton>
     </div>
   } @else if (error) {
-    <!-- Error State theo muc 6.4 QUY_TAC_THIET_KE_FE.md -->
     <app-error-state
       title="Không thể tải danh sách học phần"
       [message]="error"
       (retry)="loadCourses()"
     ></app-error-state>
   } @else if (filteredCourses.length === 0) {
-    <!-- Empty State theo muc 6.3 QUY_TAC_THIET_KE_FE.md -->
     <app-empty-state
       icon="search_off"
       [title]="searchQuery ? 'Không tìm thấy kết quả phù hợp' : 'Chưa có học phần nào'"
       [description]="emptyStateDescription"
-      [actionLabel]="searchQuery ? 'Xóa bộ lọc tìm kiếm' : undefined"
-      (action)="clearSearch()"
+      [actionLabel]="searchQuery ? 'Xóa bộ lọc tìm kiếm' : (isInstructorMode ? 'Thêm học phần mới' : undefined)"
+      (action)="searchQuery ? clearSearch() : openCreateModal()"
     ></app-empty-state>
   } @else {
-    <!-- Course Cards Grid -->
     <div class="courses-grid">
       @for (course of filteredCourses; track course.id) {
         <div class="course-card">
@@ -94,16 +105,153 @@
               <span class="material-symbols-outlined">quiz</span>
               {{ course.questionCount }} câu hỏi
             </span>
-            <a
-              [routerLink]="['/student/courses', course.id, 'questions']"
-              class="btn btn--primary btn--sm"
-            >
-              Chọn câu hỏi
-              <span class="material-symbols-outlined">arrow_forward</span>
-            </a>
+
+            @if (isInstructorMode) {
+              <div class="course-card__actions">
+                <a
+                  [routerLink]="['/instructor/courses', course.id, 'documents']"
+                  class="btn btn--secondary btn--sm"
+                >
+                  <span class="material-symbols-outlined">menu_book</span>
+                  Giáo trình RAG
+                </a>
+                <a
+                  [routerLink]="['/instructor/questions']"
+                  [queryParams]="{ courseId: course.id }"
+                  class="btn btn--primary btn--sm"
+                >
+                  Câu hỏi & Rubric
+                  <span class="material-symbols-outlined">arrow_forward</span>
+                </a>
+              </div>
+            } @else {
+              <a
+                [routerLink]="['/student/courses', course.id, 'questions']"
+                class="btn btn--primary btn--sm"
+              >
+                Chọn câu hỏi
+                <span class="material-symbols-outlined">arrow_forward</span>
+              </a>
+            }
           </div>
         </div>
       }
+    </div>
+  }
+
+  <!-- Modal Thêm mới học phần (Giảng viên) -->
+  @if (showCreateModal) {
+    <div class="modal-backdrop" (click)="closeCreateModal()">
+      <div class="modal-dialog" (click)="$event.stopPropagation()">
+        <header class="modal-header">
+          <div class="modal-header__title-group">
+            <span class="material-symbols-outlined modal-icon">library_add</span>
+            <div>
+              <h2 class="modal-title">Thêm mới học phần ôn thi</h2>
+              <p class="modal-subtitle">
+                Tạo học phần mới để chuẩn bị nạp tài liệu giáo trình RAG và soạn thảo câu hỏi vấn đáp.
+              </p>
+            </div>
+          </div>
+          <button type="button" class="close-btn" (click)="closeCreateModal()" aria-label="Đóng">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </header>
+
+        <form (ngSubmit)="submitCreateCourse()" class="modal-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="new-code" class="form-label">
+                Mã học phần <span class="required">*</span>
+              </label>
+              <input
+                id="new-code"
+                type="text"
+                class="form-input"
+                placeholder="VD: IT4010, IT2030..."
+                [(ngModel)]="newCourseCode"
+                name="newCourseCode"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="new-semester" class="form-label">Học kỳ</label>
+              <input
+                id="new-semester"
+                type="text"
+                class="form-input"
+                placeholder="VD: Học kỳ 1 - 2026"
+                [(ngModel)]="newCourseSemester"
+                name="newCourseSemester"
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="new-name" class="form-label">
+              Tên học phần / môn học <span class="required">*</span>
+            </label>
+            <input
+              id="new-name"
+              type="text"
+              class="form-input"
+              placeholder="VD: Trí tuệ Nhân tạo & Học máy nâng cao"
+              [(ngModel)]="newCourseName"
+              name="newCourseName"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="new-department" class="form-label">Khoa / Bộ môn phụ trách</label>
+            <input
+              id="new-department"
+              type="text"
+              class="form-input"
+              placeholder="VD: Khoa Công nghệ Thông tin"
+              [(ngModel)]="newCourseDepartment"
+              name="newCourseDepartment"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="new-desc" class="form-label">Mô tả tóm tắt học phần</label>
+            <textarea
+              id="new-desc"
+              rows="3"
+              class="form-textarea"
+              placeholder="Mô tả nội dung chương trình học, mục tiêu đầu ra và phạm vi kiểm tra vấn đáp..."
+              [(ngModel)]="newCourseDescription"
+              name="newCourseDescription"
+            ></textarea>
+          </div>
+
+          <footer class="modal-footer">
+            <button
+              type="button"
+              class="btn btn--ghost"
+              [disabled]="isCreating"
+              (click)="closeCreateModal()"
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="submit"
+              class="btn btn--primary"
+              [disabled]="isCreating"
+            >
+              @if (isCreating) {
+                <span class="material-symbols-outlined spin">progress_activity</span>
+                <span>Đang tạo...</span>
+              } @else {
+                <span class="material-symbols-outlined">check</span>
+                <span>Tạo học phần</span>
+              }
+            </button>
+          </footer>
+        </form>
+      </div>
     </div>
   }
 </div>

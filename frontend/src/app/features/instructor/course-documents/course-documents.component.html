@@ -1,0 +1,216 @@
+<div class="rag-page">
+  <!-- Header -->
+  <header class="rag-header">
+    <div class="rag-header__nav">
+      <a routerLink="/instructor/courses" class="rag-header__back">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Danh sách học phần
+      </a>
+      <span class="rag-header__badge">{{ courseId }}</span>
+    </div>
+    <div class="rag-header__top" style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
+      <div>
+        <h1 class="rag-header__title">Quản lý Giáo trình & Kho tri thức</h1>
+        <p class="rag-header__subtitle">
+          {{ course ? course.name + ' — ' + course.description : 'Nạp giáo trình để AI đối chiếu khi chấm thi.' }}
+        </p>
+      </div>
+      <div>
+        <button class="btn btn--primary" (click)="connectGoogleDrive()" [disabled]="googleAccessToken !== null">
+          <span class="material-symbols-outlined">link</span>
+          {{ googleAccessToken ? 'Đã kết nối Drive' : 'Kết nối Google Drive' }}
+        </button>
+      </div>
+    </div>
+  </header>
+
+  @if (loading) {
+  <div class="rag-stats-grid">
+    <app-skeleton variant="card"></app-skeleton>
+    <app-skeleton variant="card"></app-skeleton>
+    <app-skeleton variant="card"></app-skeleton>
+  </div>
+  } @else if (error) {
+  <app-error-state
+    title="Lỗi kết nối AI Service"
+    [message]="error"
+    (retry)="loadRagStatus()"
+  ></app-error-state>
+  } @else if (ragStatus) {
+  <!-- Khu vực 1: Thống kê Kho RAG -->
+  <div class="rag-stats-grid">
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--primary">
+        <span class="material-symbols-outlined">folder_shared</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Tài liệu Drive đã nạp</div>
+        <div class="stat-card__value">{{ ragStatus.totalFiles }} tài liệu</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--success">
+        <span class="material-symbols-outlined">dataset</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Tổng số đoạn (Chunks)</div>
+        <div class="stat-card__value">{{ ragStatus.totalChunks }} đoạn</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--info">
+        <span class="material-symbols-outlined">hub</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Chế độ tìm kiếm & Embedding</div>
+        <div class="stat-card__meta">
+          {{ ragStatus.hybridBm25Active ? 'Hybrid (Dense + BM25 + RRF)' : 'Dense Vector' }}
+        </div>
+        <div class="stat-card__sub">{{ ragStatus.embeddingModel }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KHU VỰC 2: NẠP TÀI LIỆU TỪ GOOGLE PICKER -->
+  <div class="card rag-upload-card" style="margin-top: 1.5rem;">
+    <h2 class="section-title">
+      <span class="material-symbols-outlined" style="color: #0f9d58;">add_to_drive</span>
+      Nạp tài liệu từ Google Drive
+    </h2>
+    <p class="section-desc">
+      Bấm nút bên dưới để mở giao diện chọn file của Google. File được chọn sẽ được tự động tải về và nạp vào AI.
+    </p>
+
+    <div style="text-align: center; padding: 3rem 2rem; border: 2px dashed var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg);">
+      <span class="material-symbols-outlined" style="font-size: 4rem; color: #0f9d58; margin-bottom: 1rem;">drive_folder_upload</span>
+      <br>
+      <button class="btn btn--primary" (click)="openGooglePicker()" [disabled]="!googleAccessToken || isSyncing">
+        <span class="material-symbols-outlined">folder_open</span>
+        {{ isSyncing ? 'Đang tải file...' : 'Chọn file từ Google Drive' }}
+      </button>
+      <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--color-text-muted);" *ngIf="!googleAccessToken">
+        Vui lòng bấm "Kết nối Google Drive" ở góc trên trước khi chọn file.
+      </p>
+    </div>
+  </div>
+
+  <!-- KHUNG HIỂN THỊ DANH SÁCH TÀI LIỆU ĐÃ NẠP -->
+  <div class="card" style="margin-top: 1.5rem;" *ngIf="ragStatus && ragStatus.files.length > 0">
+    <h3 class="section-title" style="font-size: 1.1rem;">
+      <span class="material-symbols-outlined" style="color: #0f9d58;">folder_open</span>
+      Tài liệu đã nạp vào AI ({{ ragStatus.files.length }})
+    </h3>
+    <ul style="list-style: none; padding: 0; margin-top: 1rem;">
+      <li *ngFor="let file of ragStatus.files" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--color-border);">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="material-symbols-outlined" style="color: #0f9d58;">description</span>
+          <span style="font-weight: 500;">{{ file }}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">
+            Đã nhúng RAG
+          </span>
+          <a [href]="getDriveLink(file)" target="_blank" class="btn btn--secondary btn--sm" title="Mở file gốc trên Drive">
+            <span class="material-symbols-outlined">open_in_new</span> Mở Drive
+          </a>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Khu vực 3: Khung Tìm thử trong Giáo trình -->
+  <section class="card rag-search-card" style="margin-top: 1.5rem;">
+    <h2 class="section-title">
+      <span class="material-symbols-outlined">manage_search</span>
+      Kiểm tra thử Truy xuất Giáo trình (Test Hybrid RAG)
+    </h2>
+    <p class="section-desc">
+      Nhập thử câu hỏi hoặc câu trả lời của sinh viên để kiểm tra xem thuật toán
+      <strong>Hybrid Search (ChromaDB Cosine + BM25 + RRF k=60)</strong> trích xuất đoạn giáo
+      trình nào.
+    </p>
+
+    <div class="rag-search-controls">
+      <div class="rag-search-input-wrap">
+        <input
+          type="text"
+          class="rag-search-input"
+          [(ngModel)]="searchQuery"
+          placeholder="Nhập câu hỏi hoặc câu trả lời giả định của sinh viên..."
+          (keyup.enter)="runTestSearch()"
+        />
+      </div>
+
+      <div class="rag-search-options">
+        <label class="rag-option-label">
+          Chế độ:
+          <select [(ngModel)]="searchMode" class="rag-select">
+            <option value="hybrid">Hybrid (Dense + BM25 + RRF)</option>
+            <option value="dense">Dense Vector (Ngữ nghĩa)</option>
+            <option value="bm25">Sparse BM25 (Từ khóa)</option>
+          </select>
+        </label>
+
+        <label class="rag-option-label">
+          Top-K:
+          <select [(ngModel)]="topK" class="rag-select">
+            <option [ngValue]="2">2 đoạn</option>
+            <option [ngValue]="3">3 đoạn</option>
+            <option [ngValue]="5">5 đoạn</option>
+          </select>
+        </label>
+
+        <button
+          type="button"
+          class="btn btn--primary"
+          [disabled]="searching || !searchQuery.trim()"
+          (click)="runTestSearch()"
+        >
+          <span class="material-symbols-outlined">search</span>
+          {{ searching ? 'Đang tìm...' : 'Tìm thử trong giáo trình' }}
+        </button>
+      </div>
+    </div>
+
+    @if (cleanedQuery) {
+    <div class="cleaned-query-banner">
+      <strong>Câu truy vấn sau khi lọc từ đệm vấn đáp (clean_oral_query):</strong>
+      <code>{{ cleanedQuery }}</code>
+    </div>
+    }
+
+    @if (hasSearched && !searching) {
+    @if (searchResults.length === 0) {
+    <div class="empty-files">
+      <p>Không tìm thấy đoạn văn bản nào khớp trong môn {{ courseId }}.</p>
+    </div>
+    } @else {
+    <div class="rag-results-list">
+      @for (chunk of searchResults; track chunk.chunkId; let idx = $index) {
+      <div class="rag-chunk-card">
+        <div class="rag-chunk-card__header">
+          <span class="rag-chunk-card__rank">#{{ idx + 1 }} · {{ chunk.source }}</span>
+          <div class="rag-chunk-card__badges">
+            <span class="rag-badge rag-badge--source">
+              Nguồn tìm: {{ chunk.retrievedBy }}
+            </span>
+            @if (chunk.denseSim !== null && chunk.denseSim !== undefined) {
+            <span class="rag-badge">Cosine: {{ chunk.denseSim }}</span>
+            }
+            @if (chunk.bm25Score !== null && chunk.bm25Score !== undefined) {
+            <span class="rag-badge">BM25: {{ chunk.bm25Score }}</span>
+            }
+            <span class="rag-badge rag-badge--rrf">RRF: {{ chunk.rrfScore }}</span>
+          </div>
+        </div>
+        <p class="rag-chunk-card__text">{{ chunk.text }}</p>
+      </div>
+      }
+    </div>
+    }
+    }
+  </section>
+  }
+</div>

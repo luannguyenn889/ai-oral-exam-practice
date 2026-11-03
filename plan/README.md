@@ -11,6 +11,9 @@ Bộ tài liệu này chuyển kế hoạch NCKH và kế hoạch Frontend Angul
 - [Sprint 4 — STT và xác nhận transcript](SPRINT_04.md): tuần 7–8.
 - [Sprint 5 — Chấm AI, lịch sử và pilot](SPRINT_05.md): tuần 9–10.
 - [Sprint 6 — Đánh giá nghiên cứu và bàn giao](SPRINT_06.md): tuần 11–12.
+- [Tiến độ hiện tại và kế hoạch sprint theo chức năng](TIEN_DO_VA_VIEC_TIEP_THEO.md): **áp dụng từ tuần 4**, mỗi sprint hoàn thành một chức năng trọn vẹn; thay thế phân công trong Sprint 2–6 khi có khác biệt.
+- [Phân tích `speed-to-text-demo` và kế hoạch tích hợp vào `ai-service`](KE_HOACH_TICH_HOP_AI_SERVICE.md): phân tích chi tiết luồng STT + Hybrid RAG (Dense + BM25 + RRF) và lộ trình đưa vào FastAPI.
+- [Kế hoạch thiết kế giao diện (UI) theo vai trò cho luồng AI & Hybrid RAG](KE_HOACH_GIAO_DIEN_THEO_VAI_TRO_AI_RAG.md): phân chia các màn hình, quyền hạn trên UI cho `Giảng viên`, `Sinh viên`, `Quản trị viên` và phân công thực hiện.
 
 ## Mục tiêu sản phẩm
 

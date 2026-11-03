@@ -1,0 +1,445 @@
+<div class="import-page">
+  <!-- Header / Breadcrumbs -->
+  <header class="import-header">
+    <div class="import-header__nav">
+      <a routerLink="/instructor/questions" class="import-header__back-link">
+        <span class="material-symbols-outlined">arrow_back</span>
+        Ngân hàng câu hỏi
+      </a>
+      <span class="import-header__separator">/</span>
+      <span class="import-header__current">Nhập hàng loạt bằng Word / Excel</span>
+    </div>
+
+    <div class="import-header__title-row">
+      <div class="import-header__title-group">
+        <span class="material-symbols-outlined import-header__icon">file_upload</span>
+        <div>
+          <h1 class="import-header__title">Nhập câu hỏi & Rubric hàng loạt (AI Parser)</h1>
+          <p class="import-header__subtitle">
+            Tải lên file đề thi Word (.docx) hoặc Excel (.xlsx). AI sẽ tự động phân tích câu hỏi, đáp án mẫu, nhánh câu hỏi phụ và tạo Rubric thang điểm 10 chuẩn xác.
+          </p>
+        </div>
+      </div>
+
+      <div class="import-header__actions">
+        <button type="button" class="btn btn--secondary" (click)="downloadTemplate()">
+          <span class="material-symbols-outlined">download</span>
+          Tải file mẫu Excel (.xlsx)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Bước 1: Chọn môn học & Upload file -->
+  @if (!extractResult) {
+    <section class="card upload-card">
+      <div class="course-selector-area">
+        <label for="course-select" class="form-label">
+          Chọn học phần tiếp nhận ngân hàng câu hỏi:
+        </label>
+        <select
+          id="course-select"
+          class="form-select"
+          [(ngModel)]="selectedCourseId"
+          name="selectedCourseId"
+        >
+          @for (c of courses; track c.id) {
+            <option [value]="c.id">{{ c.code }} - {{ c.name }}</option>
+          }
+        </select>
+      </div>
+
+      <div
+        class="dropzone"
+        [class.dropzone--active]="isDragging"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave($event)"
+        (drop)="onDrop($event)"
+      >
+        <input
+          #fileInput
+          type="file"
+          class="file-input"
+          accept=".xlsx,.xls,.docx,.txt"
+          (change)="onFileInputChange($event)"
+        />
+
+        <span class="material-symbols-outlined dropzone__icon">cloud_upload</span>
+        <h3 class="dropzone__title">Kéo & Thả file đề thi Word (.docx) hoặc Excel (.xlsx) vào đây</h3>
+        <p class="dropzone__subtitle">Hoặc bấm nút bên dưới để duyệt file từ máy tính của bạn</p>
+
+        <button type="button" class="btn btn--primary" (click)="fileInput.click()">
+          <span class="material-symbols-outlined">folder_open</span>
+          Chọn file từ máy tính
+        </button>
+
+        <div class="dropzone__formats">
+          <span class="format-pill">
+            <span class="material-symbols-outlined">table_view</span>
+            Excel (.xlsx, .xls) — Cột cố định
+          </span>
+          <span class="format-pill">
+            <span class="material-symbols-outlined">description</span>
+            Word (.docx) — AI bóc tách tự do
+          </span>
+        </div>
+      </div>
+
+      @if (isAnalyzing) {
+        <div class="analyzing-overlay">
+          <div class="analyzing-box card">
+            <span class="material-symbols-outlined spin analyzing-spinner">psychology</span>
+            <h3 class="analyzing-title">AI đang bóc tách tài liệu đề thi...</h3>
+            <p class="analyzing-desc">
+              Hệ thống đang nhận diện nội dung câu hỏi, trích xuất đáp án tham chiếu, phân nhánh câu hỏi phụ và kiến tạo Rubric thang điểm 10.0 chuẩn xác. Quá trình mất khoảng vài giây.
+            </p>
+          </div>
+        </div>
+      }
+    </section>
+  } @else {
+    <!-- Bước 2: Bảng Preview tương tác & Sửa trực tiếp -->
+    <section class="preview-section">
+      <!-- Summary Bar -->
+      <div class="card summary-bar">
+        <div class="summary-bar__left">
+          <div class="summary-stat">
+            <span class="summary-stat__label">Tệp đã phân tích:</span>
+            <span class="summary-stat__value summary-stat__value--file">
+              <span class="material-symbols-outlined">attachment</span>
+              {{ extractResult.fileName }}
+            </span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="summary-stat__label">Tổng phát hiện:</span>
+            <span class="summary-stat__value">
+              <strong>{{ totalCount }}</strong> câu hỏi
+            </span>
+          </div>
+        </div>
+
+        <div class="summary-bar__badges">
+          <button
+            type="button"
+            class="filter-pill"
+            [class.filter-pill--active]="filterMode === 'all'"
+            (click)="filterMode = 'all'"
+          >
+            Tất cả ({{ totalCount }})
+          </button>
+          <button
+            type="button"
+            class="filter-pill filter-pill--valid"
+            [class.filter-pill--active]="filterMode === 'valid'"
+            (click)="filterMode = 'valid'"
+          >
+            <span class="material-symbols-outlined">check_circle</span>
+            Hợp lệ ({{ validCount }})
+          </button>
+          <button
+            type="button"
+            class="filter-pill filter-pill--error"
+            [class.filter-pill--active]="filterMode === 'issues'"
+            (click)="filterMode = 'issues'"
+          >
+            <span class="material-symbols-outlined">warning</span>
+            Cần sửa ({{ errorCount + warningCount }})
+          </button>
+        </div>
+      </div>
+
+      <!-- Danh sách câu hỏi Preview có Inline Edit -->
+      <div class="questions-preview-list">
+        @for (q of filteredQuestions; track q.tempId; let idx = $index) {
+          <div
+            class="card preview-card"
+            [class.preview-card--error]="q.status === 'error'"
+            [class.preview-card--warning]="q.status === 'warning'"
+            [class.preview-card--valid]="q.status === 'valid'"
+          >
+            <!-- Card Header: Mã câu, trạng thái, câu cha, nút xóa -->
+            <div class="preview-card__header">
+              <div class="preview-card__meta-left">
+                <input
+                  type="text"
+                  class="form-input code-input"
+                  [(ngModel)]="q.code"
+                  (input)="validateAllQuestions()"
+                  placeholder="Mã câu"
+                  title="Mã câu hỏi (VD: Q1, Q1.1)"
+                />
+
+                <input
+                  type="text"
+                  class="form-input topic-input"
+                  [(ngModel)]="q.topic"
+                  placeholder="Chương / Chủ đề"
+                />
+
+                <!-- Câu hỏi cha / Nhánh hỏi tiếp -->
+                <div class="parent-link-group">
+                  <span class="parent-label">Câu cha:</span>
+                  <input
+                    type="text"
+                    class="form-input parent-input"
+                    [(ngModel)]="q.parentCode"
+                    (input)="validateAllQuestions()"
+                    placeholder="None (Câu độc lập)"
+                    title="Điền mã câu hỏi cha nếu câu này là nhánh hỏi tiếp"
+                  />
+                  @if (q.parentCode) {
+                    <span class="badge badge--followup">Câu hỏi phụ</span>
+                  }
+                </div>
+              </div>
+
+              <div class="preview-card__meta-right">
+                <!-- Dropdown Độ khó -->
+                <select
+                  class="form-select diff-select"
+                  [(ngModel)]="q.difficulty"
+                  (change)="validateAllQuestions()"
+                >
+                  <option value="easy">Dễ (Cơ bản)</option>
+                  <option value="medium">Trung bình</option>
+                  <option value="hard">Khó (Nâng cao)</option>
+                </select>
+
+                <!-- Thời lượng -->
+                <div class="time-limit-box">
+                  <input
+                    type="number"
+                    step="30"
+                    min="60"
+                    max="600"
+                    class="form-input time-input"
+                    [(ngModel)]="q.timeLimitSeconds"
+                  />
+                  <span class="time-label">giây</span>
+                </div>
+
+                <!-- Status Badge -->
+                <span
+                  class="status-badge status-badge--{{ q.status }}"
+                  [title]="q.errors.join('; ') || q.warnings.join('; ')"
+                >
+                  <span class="material-symbols-outlined">
+                    {{
+                      q.status === 'valid'
+                        ? 'check_circle'
+                        : q.status === 'error'
+                          ? 'cancel'
+                          : 'error'
+                    }}
+                  </span>
+                  {{
+                    q.status === 'valid'
+                      ? 'Hợp lệ'
+                      : q.status === 'error'
+                        ? 'Có lỗi'
+                        : 'Cảnh báo'
+                  }}
+                </span>
+
+                <!-- Nút xóa câu hỏi khỏi danh sách -->
+                <button
+                  type="button"
+                  class="delete-btn"
+                  title="Xóa câu này khỏi danh sách import"
+                  (click)="removeQuestion(idx)"
+                >
+                  <span class="material-symbols-outlined">delete</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Banner cảnh báo / lỗi nếu có -->
+            @if (q.errors.length > 0 || q.warnings.length > 0) {
+              <div
+                class="issue-banner"
+                [class.issue-banner--error]="q.errors.length > 0"
+                [class.issue-banner--warning]="q.errors.length === 0 && q.warnings.length > 0"
+              >
+                @for (err of q.errors; track err) {
+                  <div class="issue-item issue-item--error">
+                    <span class="material-symbols-outlined">error</span>
+                    <span><strong>Lỗi:</strong> {{ err }}</span>
+                  </div>
+                }
+                @for (warn of q.warnings; track warn) {
+                  <div class="issue-item issue-item--warning">
+                    <span class="material-symbols-outlined">warning</span>
+                    <span><strong>Lưu ý:</strong> {{ warn }}</span>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Body: Tiêu đề, Nội dung phát vấn, Đáp án tham chiếu -->
+            <div class="preview-card__body">
+              <div class="form-group">
+                <label class="form-label">Tiêu đề tóm tắt:</label>
+                <input
+                  type="text"
+                  class="form-input"
+                  [(ngModel)]="q.title"
+                  (input)="validateAllQuestions()"
+                  placeholder="Tiêu đề câu hỏi..."
+                />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  Nội dung phát vấn cho thí sinh <span class="required">*</span>:
+                </label>
+                <textarea
+                  rows="2"
+                  class="form-textarea"
+                  [(ngModel)]="q.content"
+                  (input)="validateAllQuestions()"
+                  placeholder="Nhập nội dung câu hỏi phát vấn..."
+                ></textarea>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  Đáp án tham chiếu / Reference Answer <span class="required">*</span>:
+                </label>
+                <textarea
+                  rows="3"
+                  class="form-textarea"
+                  [(ngModel)]="q.sampleAnswer"
+                  (input)="validateAllQuestions()"
+                  placeholder="Nêu các ý chính, luận điểm bắt buộc để AI đối chiếu chấm..."
+                ></textarea>
+              </div>
+
+              <!-- Accordion Rubric chấm điểm của câu này -->
+              <div class="rubric-accordion">
+                <div class="rubric-accordion__header" (click)="toggleRubric(q.tempId)">
+                  <div class="rubric-accordion__title">
+                    <span class="material-symbols-outlined">checklist</span>
+                    <span>Rubric chấm điểm AI ({{ q.criteria.length }} tiêu chí)</span>
+                    <span
+                      class="score-tag"
+                      [class.score-tag--valid]="q.totalScore === 10"
+                      [class.score-tag--invalid]="q.totalScore !== 10"
+                    >
+                      Tổng: {{ q.totalScore }} / 10.0đ
+                    </span>
+                  </div>
+
+                  <div class="rubric-accordion__controls">
+                    @if (q.totalScore !== 10) {
+                      <button
+                        type="button"
+                        class="btn btn--sm btn--ghost auto-balance-btn"
+                        (click)="$event.stopPropagation(); balanceRubricTo10(q)"
+                      >
+                        <span class="material-symbols-outlined">auto_fix_high</span>
+                        Cân bằng về 10.0đ
+                      </button>
+                    }
+                    <span class="material-symbols-outlined toggle-icon">
+                      {{ isRubricExpanded(q.tempId) ? 'expand_less' : 'expand_more' }}
+                    </span>
+                  </div>
+                </div>
+
+                @if (isRubricExpanded(q.tempId)) {
+                  <div class="rubric-accordion__content">
+                    <table class="rubric-table">
+                      <thead>
+                        <tr>
+                          <th style="width: 25%">Tên tiêu chí</th>
+                          <th style="width: 15%">Điểm tối đa</th>
+                          <th>Hướng dẫn chấm chi tiết cho AI</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (c of q.criteria; track c.name; let cIdx = $index) {
+                          <tr>
+                            <td>
+                              <input
+                                type="text"
+                                class="form-input"
+                                [(ngModel)]="c.name"
+                                placeholder="Tên tiêu chí..."
+                              />
+                            </td>
+                            <td>
+                              <div class="score-input-wrap">
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0.5"
+                                  max="10"
+                                  class="form-input text-center"
+                                  [(ngModel)]="c.maxScore"
+                                  (input)="validateAllQuestions()"
+                                />
+                                <span>đ</span>
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                class="form-input"
+                                [(ngModel)]="c.description"
+                                placeholder="Mô tả ý cần đạt..."
+                              />
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Action Footer -->
+      <footer class="card import-footer">
+        <div class="import-footer__left">
+          <button type="button" class="btn btn--secondary" (click)="addNewQuestionRow()">
+            <span class="material-symbols-outlined">add_circle</span>
+            Thêm một dòng câu hỏi mới
+          </button>
+          <button type="button" class="btn btn--ghost" (click)="resetAll()">
+            <span class="material-symbols-outlined">restart_alt</span>
+            Chọn file khác
+          </button>
+        </div>
+
+        <div class="import-footer__right">
+          @if (hasBlockingErrors) {
+            <span class="blocking-warning">
+              <span class="material-symbols-outlined">error</span>
+              Còn {{ errorCount }} câu hỏi có lỗi. Hãy sửa trước khi lưu!
+            </span>
+          }
+
+          <button
+            type="button"
+            class="btn btn--primary btn--lg"
+            [disabled]="isSubmitting || hasBlockingErrors"
+            (click)="submitBatch()"
+          >
+            @if (isSubmitting) {
+              <span class="material-symbols-outlined spin">progress_activity</span>
+              <span>Đang lưu vào ngân hàng...</span>
+            } @else {
+              <span class="material-symbols-outlined">save</span>
+              <span>Xác nhận nhập {{ totalCount }} câu hỏi vào ngân hàng</span>
+            }
+          </button>
+        </div>
+      </footer>
+    </section>
+  }
+</div>
+

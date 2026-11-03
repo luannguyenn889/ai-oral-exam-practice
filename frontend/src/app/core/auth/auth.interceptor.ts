@@ -1,8 +1,12 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 
-// Gắn JWT vào API nghiệp vụ; không gửi token cũ kèm request login/register.
+// Gắn JWT vào API nghiệp vụ Spring Boot; không gửi token sang AI Service (:8000/ai/*) hoặc login/register.
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
-  if (request.url.includes('/auth/login') || request.url.includes('/auth/register')) {
+  if (
+    request.url.includes('/auth/login') ||
+    request.url.includes('/auth/register') ||
+    request.url.includes('/ai/')
+  ) {
     return next(request);
   }
 
