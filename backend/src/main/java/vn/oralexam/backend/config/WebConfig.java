@@ -39,7 +39,7 @@ public class WebConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/health/**", "/error").permitAll()
-                        .requestMatchers("/api/courses/**", "/api/questions/**").permitAll()
+                        .requestMatchers("/api/courses/**", "/api/questions/**", "/api/documents/**", "/api/drive/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(tokenService), UsernamePasswordAuthenticationFilter.class)
                 .build();

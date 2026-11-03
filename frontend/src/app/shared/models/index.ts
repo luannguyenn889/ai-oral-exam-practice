@@ -210,3 +210,12 @@ export interface ApiError {
   details?: Record<string, unknown>;
   timestamp: string;
 }
+
+export interface DriveDocument {
+  id: string;
+  title: string;
+  driveUrl: string;
+  description?: string;
+  courseId: string;
+  createdAt: string;
+}
