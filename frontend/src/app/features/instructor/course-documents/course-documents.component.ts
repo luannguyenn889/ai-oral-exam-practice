@@ -45,7 +45,8 @@ export class CourseDocumentsComponent implements OnInit {
   searching = false;
   cleanedQuery = '';
   searchResults: RagChunkResult[] = [];
-  hasSearched = false;
+  // Trạng thái hiển thị danh sách kết quả RAG
+  showResults = true;
 
   ngOnInit(): void {
     this.courseId = this.route.snapshot.paramMap.get('courseId') || 'IT2030';
@@ -176,6 +177,10 @@ export class CourseDocumentsComponent implements OnInit {
     // Giữ hàm rỗng để tránh lỗi
   }
 
+  toggleShowResults(): void {
+    this.showResults = !this.showResults;
+  }
+
   runTestSearch(): void {
     if (!this.searchQuery.trim()) return;
     this.searching = true;
@@ -185,8 +190,16 @@ export class CourseDocumentsComponent implements OnInit {
       topK: this.topK,
       searchMode: this.searchMode
     }).subscribe({
-      next: (res) => { this.searching = false; this.cleanedQuery = res.cleanedQuery; this.searchResults = res.results; },
-      error: () => { this.searching = false; this.toast.error('Lỗi tìm kiếm.'); },
+      next: (res) => {
+        this.searching = false;
+        this.cleanedQuery = res.cleanedQuery;
+        this.searchResults = res.results;
+        this.showResults = true;
+      },
+      error: () => {
+        this.searching = false;
+        this.toast.error('Lỗi tìm kiếm.');
+      },
     });
   }
 }

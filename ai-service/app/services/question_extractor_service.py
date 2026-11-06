@@ -160,14 +160,24 @@ def _generate_tailored_criteria(question_text: str) -> List[RubricCriterionItem]
 
 
 def _generate_tailored_sample_answer(question_text: str) -> str:
-    """Tạo câu trả lời tham chiếu súc tích bám sát theo câu hỏi nếu file Word chưa có sẵn đáp án."""
-    q_clean = question_text.strip().rstrip("?").rstrip(":")
+    """Tạo dàn ý đáp án tham chiếu chuẩn học thuật khi tài liệu chưa có sẵn phần trả lời mẫu."""
+    q_lower = question_text.lower()
+    if "so sánh" in q_lower or "phân biệt" in q_lower:
+        return (
+            "- Nêu khái niệm và bản chất cốt lõi của từng đối tượng được đề cập.\n"
+            "- Phân tích các tiêu chí khác biệt trọng tâm (cơ chế hoạt động, phạm vi áp dụng, ưu và nhược điểm).\n"
+            "- Đưa ra ví dụ thực tế minh họa hoàn cảnh lựa chọn phù hợp cho từng trường hợp."
+        )
+    if "quy trình" in q_lower or "mô hình" in q_lower or "giai đoạn" in q_lower or "hoạt động" in q_lower:
+        return (
+            "- Trình bày tổng quan mục đích và nguyên lý chung của quy trình / mô hình.\n"
+            "- Nêu đầy đủ các giai đoạn / hoạt động chính theo đúng trình tự cùng đầu vào và đầu ra của mỗi bước.\n"
+            "- Đánh giá ưu nhược điểm và phạm vi áp dụng thực tế trong dự án phần mềm."
+        )
     return (
-        f"Thí sinh cần trình bày đúng trọng tâm câu hỏi: '{q_clean}'. "
-        "Yêu cầu nêu rõ: (1) Khái niệm/Định nghĩa cốt lõi; "
-        "(2) Các đặc điểm, cơ chế hoạt động hoặc các giai đoạn chi tiết theo giáo trình; "
-        "(3) Lấy ví dụ minh họa cụ thể trong dự án phần mềm thực tế; "
-        "(4) Phân tích ưu/nhược điểm và trả lời tự tin, đúng thuật ngữ chuyên môn."
+        "- Trình bày chính xác định nghĩa, khái niệm và các thuật ngữ chuyên môn trọng tâm.\n"
+        "- Phân tích chi tiết các đặc điểm, thành phần cấu thành hoặc cơ chế hoạt động cốt lõi.\n"
+        "- Liên hệ thực tiễn kèm ví dụ minh họa cụ thể và đánh giá ưu / nhược điểm khi áp dụng."
     )
 
 
@@ -277,364 +287,789 @@ def _parse_excel(file_bytes: bytes) -> List[ExtractedQuestionItem]:
     return questions
 
 
-def _parse_word_smart_heuristic(file_bytes: bytes, filename: str) -> List[ExtractedQuestionItem]:
-    """Phân tích cấu trúc file Word thông minh dựa trên ngữ cảnh thực tế của tài liệu đề thi.
-    
-    Quy tắc phân định ranh giới câu hỏi:
-    1. Nhận diện các tiền tố câu hỏi chuẩn: 'Câu 1:', 'Câu 2:', 'Câu 1.1:', 'Bài 1:', '1.', '2.' v.v.
-    2. Gom nhóm (Grouping): toàn bộ các dòng mô tả, gạch đầu dòng (-), ý phụ (a, b, c) nằm dưới câu hỏi
-       phải được giữ nguyên trong nội dung của câu hỏi đó (content), tuyệt đối không cắt vụn thành câu hỏi mới.
-    3. Tách biệt đáp án: các dòng 'Đáp án:', 'Gợi ý:', 'Key points:' được trích xuất riêng vào sample_answer.
-    4. Nếu tài liệu không dùng tiền tố 'Câu ...' mà liệt kê từng đoạn phát vấn (hỏi độc lập), mỗi đoạn là 1 câu hỏi.
-    """
-    paragraphs: list[str] = []
-    lower_fn = filename.lower()
+# =====================================================================================
+# BÓC TÁCH FILE WORD TỰ DO: Parser cấu trúc theo vùng (State Machine) + AI chỉ bù phần thiếu
+# =====================================================================================
+#
+# Nguyên tắc:
+#   1. Đọc tài liệu ĐÚNG THỨ TỰ xuất hiện (đoạn văn + bảng xen kẽ), nhận biết cả danh sách
+#      đánh số tự động của Word (số "1." không nằm trong text).
+#   2. Mỗi dòng được phân vào 1 trong 3 VÙNG của câu hỏi hiện tại:
+#        content (nội dung phát vấn) | answer (đáp án tham chiếu) | rubric (tiêu chí chấm)
+#      -> Dòng tiêu đề "Tiêu chí chấm điểm (Rubric)", "Đáp án:" chỉ dùng để CHUYỂN VÙNG,
+#         không bao giờ bị chèn vào nội dung câu hỏi.
+#      -> Các dòng đánh số "1.", "2." nằm trong vùng rubric/đáp án là Ý CHẤM / Ý ĐÁP ÁN,
+#         không bị tách thành câu hỏi mới.
+#   3. Nội dung câu hỏi, đáp án và rubric có sẵn trong file được giữ NGUYÊN VĂN.
+#      AI (Gemini) chỉ được gọi để bổ sung phần file KHÔNG có (đáp án, rubric, tiêu đề tóm tắt).
 
-    if lower_fn.endswith(".docx"):
+_BULLET_RE = re.compile(r"^\s*(?:[-–—•●○◦▪■□+*➢➤►✓✔]|\(?[a-zA-Zđ]\)|[a-zA-Zđ][\.\)](?=\s))\s*")
+_ENUM_PREFIX_RE = re.compile(r"^\s*(?:\(?\d{1,2}[\.\)]|\(?[a-zA-Zđ][\.\)]|[-–—•●○◦▪■□+*➢➤►✓✔])\s*")
+
+_TOPIC_RE = re.compile(
+    r"^(?:phần|chương|chủ đề|học phần|part|chapter|unit)\s*(?:[\dIVXLivxl]+|[A-Z])\s*[:\.\-–)]?\s*",
+    re.IGNORECASE,
+)
+_SECTION_RE = re.compile(r"^(?:[A-D]|[IVX]{1,4})[\.\)]\s+\S", re.IGNORECASE)
+
+_QUESTION_PREFIX_RE = re.compile(
+    r"^(?:câu(?:\s*hỏi)?|bài|question|q)\s*(\d+(?:\.\d+)*)\s*(\([^)]*\))?\s*[:\.\)\-–]?\s*(.*)$",
+    re.IGNORECASE,
+)
+_NUMBERED_RE = re.compile(r"^(\d{1,3})\s*[\.\)]\s+(.+)$")
+_SUB_NUMBERED_RE = re.compile(r"^(\d{1,3}(?:\.\d{1,3})+)\s*[\.\)]?\s+(.+)$")
+
+_ANSWER_HEADER_RE = re.compile(
+    r"^(?:đáp\s*án(?:\s*(?:tham\s*chiếu|mẫu|gợi\s*ý|đề\s*xuất))?|trả\s*lời|lời\s*giải|"
+    r"gợi\s*ý(?:\s*(?:trả\s*lời|đáp\s*án))?|hướng\s*dẫn\s*(?:giải|trả\s*lời)|"
+    r"reference\s*answer|sample\s*answer|answer|key\s*points?|ý\s*chính(?:\s*cần\s*đạt)?)"
+    r"\s*(?:\([^)]*\))?\s*[:\.\-–]?\s*(.*)$",
+    re.IGNORECASE,
+)
+_RUBRIC_HEADER_RE = re.compile(
+    r"^(?:tiêu\s*chí(?:\s*(?:chấm(?:\s*điểm)?|đánh\s*giá))?|rubric|thang\s*điểm|biểu\s*điểm|"
+    r"barem[e]?|hướng\s*dẫn\s*chấm(?:\s*điểm)?|cách\s*chấm(?:\s*điểm)?|grading\s*criteria|criteria)"
+    r"\s*(?:\([^)]*\))?\s*[:\.\-–]?\s*(.*)$",
+    re.IGNORECASE,
+)
+_SCORE_RE = re.compile(
+    r"(?<![\w.,])(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:điểm|diem|đ|pts?|points?)(?!\w)",
+    re.IGNORECASE,
+)
+_TRAILING_SCORE_RE = re.compile(r"[:\-–|]\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*$")
+
+_QUESTION_CUE_START_RE = re.compile(
+    r"^(?:hãy|trình\s*bày|nêu|phân\s*biệt|so\s*sánh|giải\s*thích|phân\s*tích|mô\s*tả|cho\s*biết|"
+    r"vì\s*sao|tại\s*sao|thế\s*nào|liệt\s*kê|định\s*nghĩa|xây\s*dựng|thiết\s*kế|viết|vẽ|đánh\s*giá|"
+    r"chứng\s*minh|làm\s*thế\s*nào|khi\s*nào|bằng\s*cách\s*nào|kể\s*tên|lấy\s*ví\s*dụ|cho\s*ví\s*dụ)\b",
+    re.IGNORECASE,
+)
+_QUESTION_CUE_ANY_RE = re.compile(
+    r"\?|\bhãy\s|\blà\s*gì\b|\bnhư\s*thế\s*nào\b|\bvì\s*sao\b|\btại\s*sao\b", re.IGNORECASE
+)
+
+_IGNORE_LINE_PATTERNS = [
+    r"^nội dung ôn tập",
+    r"^đề cương(?: ôn tập)?",
+    r"^ngân hàng câu hỏi",
+    r"^bộ câu hỏi",
+    r"^danh sách câu hỏi",
+    r"^--+\s*hết\s*--+",
+    r"^hết$",
+    r"^giáo viên|^giảng viên(?: phụ trách)?\s*:",
+    r"^năm học",
+    r"^trường đại học|^khoa\s",
+    r"^thời gian(?: làm bài)?\s*:",
+]
+
+
+def _to_float(raw: str) -> float:
+    try:
+        return float(raw.replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def _read_document_blocks(file_bytes: bytes, filename: str) -> list[dict]:
+    """Đọc tài liệu theo đúng thứ tự: [{'type':'line','text','is_list'} | {'type':'table','rows'}]."""
+    blocks: list[dict] = []
+    if filename.lower().endswith(".docx"):
         import docx
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+
         doc = docx.Document(io.BytesIO(file_bytes))
-
-        # 1. Kiểm tra xem có cấu trúc bảng biểu hay không
-        if doc.tables:
-            table_questions: List[ExtractedQuestionItem] = []
-            q_idx = 0
-            for table in doc.tables:
+        for child in doc.element.body.iterchildren():
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "p":
+                para = Paragraph(child, doc)
+                ppr = child.pPr
+                is_list = bool(ppr is not None and ppr.numPr is not None)
+                style_name = (para.style.name or "").lower() if para.style is not None else ""
+                if "list" in style_name:
+                    is_list = True
+                for part in (para.text or "").split("\n"):
+                    text = re.sub(r"\s+", " ", part).strip()
+                    if text:
+                        blocks.append({"type": "line", "text": text, "is_list": is_list})
+            elif tag == "tbl":
+                table = Table(child, doc)
+                rows: list[list[str]] = []
                 for row in table.rows:
-                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                    if len(cells) >= 2:
-                        first_str = cells[0].lower()
-                        if any(k in first_str for k in ["stt", "mã", "câu hỏi", "tiêu đề"]):
-                            continue  # Bỏ qua hàng tiêu đề bảng
-                        q_idx += 1
-                        q_content = cells[1] if len(cells) > 1 else cells[0]
-                        q_answer = cells[2] if len(cells) > 2 else _generate_tailored_sample_answer(q_content)
-                        table_questions.append(
-                            ExtractedQuestionItem(
-                                temp_id=f"tbl-{q_idx}",
-                                code=f"Q{q_idx}",
-                                topic="Ngân hàng đề thi",
-                                title=q_content[:60] + "..." if len(q_content) > 60 else q_content,
-                                content=q_content,
-                                sample_answer=q_answer,
-                                difficulty="medium",
-                                time_limit_seconds=180,
-                                parent_code=None,
-                                is_followup=False,
-                                tags=["CNPM"],
-                                criteria=_generate_tailored_criteria(q_content),
-                                total_score=10.0,
-                                status="valid",
-                                errors=[],
-                                warnings=[],
-                            )
-                        )
-            if len(table_questions) >= 2:
-                return table_questions
-
-        # 2. Đọc toàn bộ các đoạn văn bản trong file docx
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                    cells: list[str] = []
+                    prev_tc = None
+                    for cell in row.cells:
+                        if cell._tc is prev_tc:  # bỏ ô gộp (merged) bị lặp
+                            continue
+                        prev_tc = cell._tc
+                        cells.append(re.sub(r"\s+", " ", cell.text or "").strip())
+                    if any(cells):
+                        rows.append(cells)
+                if rows:
+                    blocks.append({"type": "table", "rows": rows})
     else:
         try:
             raw_text = file_bytes.decode("utf-8")
         except UnicodeDecodeError:
             raw_text = file_bytes.decode("latin-1", errors="ignore")
-        paragraphs = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        for line in raw_text.splitlines():
+            text = re.sub(r"\s+", " ", line).strip()
+            if text:
+                blocks.append({"type": "line", "text": text, "is_list": False})
+    return blocks
 
-    if not paragraphs:
-        return []
 
-    # Danh sách tiêu đề tài liệu cần bỏ qua không tính là câu hỏi
-    IGNORE_PATTERNS = [
-        r"^nội dung ôn tập",
-        r"^đề cương ôn tập",
-        r"^ngân hàng câu hỏi",
-        r"^bộ câu hỏi ôn tập",
-        r"^nhập môn",
-        r"^[a-z]\.\s*lý thuyết",
-        r"^[a-z]\.\s*bài tập",
-        r"^--\s*hết\s*--",
-        r"^hết$",
-        r"^giáo viên phụ trách",
-        r"^năm học",
-    ]
+def _blocks_to_text(blocks: list[dict]) -> str:
+    out: list[str] = []
+    for b in blocks:
+        if b["type"] == "line":
+            out.append(("• " if b.get("is_list") else "") + b["text"])
+        else:
+            for row in b["rows"]:
+                out.append(" | ".join(c for c in row if c))
+    return "\n".join(out)
 
-    filtered_lines: list[str] = []
-    for p in paragraphs:
-        t = p.strip()
-        if not t:
-            continue
-        lower = t.lower()
-        if any(re.search(pat, lower) for pat in IGNORE_PATTERNS):
-            continue
-        filtered_lines.append(t)
 
-    QUESTION_START_PATTERN = re.compile(
-        r"^(?:Câu|Bài|Question)\s*(\d+(?:[\.\d]+)*)\s*(?:\([^\)]*\))?[:\.\)\-]\s*(.*)$",
-        re.IGNORECASE,
+def _extract_score(text: str) -> Optional[float]:
+    matches = list(_SCORE_RE.finditer(text))
+    if matches:
+        return _to_float(matches[-1].group(1))
+    m = _TRAILING_SCORE_RE.search(text)
+    if m:
+        return _to_float(m.group(1))
+    return None
+
+
+def _strip_score(text: str) -> str:
+    cleaned = _SCORE_RE.sub("", text)
+    cleaned = _TRAILING_SCORE_RE.sub("", cleaned)
+    cleaned = re.sub(r"\(\s*\)|\[\s*\]", "", cleaned)
+    return cleaned.strip(" \t:;,-–|()[]")
+
+
+def _make_criterion(text: str, score: Optional[float]) -> Optional[dict]:
+    text_clean = text.strip()
+    m_sub = _SUB_NUMBERED_RE.match(text_clean)
+    if m_sub:
+        body = m_sub.group(2).strip()
+    else:
+        body = _ENUM_PREFIX_RE.sub("", text_clean, count=1).strip()
+    body = re.sub(r"^tiêu\s*chí\s*\d*\s*[:\.\-–)]?\s*", "", body, flags=re.IGNORECASE)
+    body = _strip_score(body)
+    if not body:
+        return None
+    if ":" in body:
+        left, right = body.split(":", 1)
+        if 2 <= len(left.strip()) <= 90 and right.strip():
+            return {"name": left.strip(), "description": right.strip(), "max_score": score}
+    name = body if len(body) <= 90 else body[:87].rsplit(" ", 1)[0] + "..."
+    return {"name": name, "description": body, "max_score": score}
+
+
+def _is_topic_line(text: str) -> bool:
+    if _TOPIC_RE.match(text) and not text.rstrip().endswith("?"):
+        return True
+    letters = [c for c in text if c.isalpha()]
+    return bool(
+        letters
+        and len(text) <= 90
+        and text.isupper()
+        and not text.endswith("?")
+        and not _SCORE_RE.search(text)
     )
-    NUMBERED_PATTERN = re.compile(r"^(\d+)[\.\)]\s+(.*)$")
-    ANSWER_PATTERN = re.compile(
-        r"^(?:Đáp án|Trả lời|Gợi ý(?: trả lời)?|Hướng dẫn(?: giải)?|Key points?)[:\.\-]\s*(.*)$",
-        re.IGNORECASE,
-    )
 
-    explicit_count = sum(
-        1 for line in filtered_lines if QUESTION_START_PATTERN.match(line) or NUMBERED_PATTERN.match(line)
-    )
 
-    raw_items: list[dict] = []
+def _looks_like_question(text: str) -> bool:
+    body = _ENUM_PREFIX_RE.sub("", text, count=1)
+    return bool(_QUESTION_CUE_START_RE.match(body) or _QUESTION_CUE_ANY_RE.search(body))
+
+
+def _new_item(code: Optional[str], topic: str, content: str, parent: Optional[str] = None,
+              is_followup: bool = False) -> dict:
+    return {
+        "code": code,
+        "topic": topic,
+        "content_lines": [content] if content else [],
+        "answer_lines": [],
+        "criteria": [],
+        "parent_code": parent,
+        "is_followup": is_followup,
+        "mode": "content",
+    }
+
+
+def _structure_parse(blocks: list[dict]) -> list[dict]:
+    """Máy trạng thái phân vùng: chia tài liệu thành các câu hỏi với 3 vùng content/answer/rubric."""
+    lines = [b for b in blocks if b["type"] == "line"]
+    uses_prefix = sum(1 for b in lines if _QUESTION_PREFIX_RE.match(b["text"])) >= 2
+
+    items: list[dict] = []
+    current: Optional[dict] = None
     current_topic = "Kiến thức chuyên ngành"
 
-    if explicit_count >= 2:
-        # Style A: Tài liệu có tiền tố rõ ràng (Câu 1, Câu 2, 1., 2...)
-        current_q: Optional[dict] = None
-        for line in filtered_lines:
-            lower = line.lower()
-            if (
-                re.match(r"^(?:phần|chương|chủ đề|bài)\s*\d+[:\.\-]", lower)
-                or (len(line) < 70 and line.isupper() and not line.endswith("?"))
-                or re.match(r"^[ivx]+\.\s+", lower)
-            ):
-                current_topic = line
-                continue
+    def start(item: dict) -> None:
+        nonlocal current
+        if current is not None:
+            items.append(current)
+        current = item
 
-            q_match = QUESTION_START_PATTERN.match(line)
-            n_match = NUMBERED_PATTERN.match(line) if not q_match else None
+    def add_criterion_line(text: str, is_list: bool = False) -> None:
+        assert current is not None
+        score = _extract_score(text)
+        text_s = text.strip()
+        is_sub_num = bool(_SUB_NUMBERED_RE.match(text_s))
+        is_bullet = bool(_BULLET_RE.match(text_s)) or is_list
+        is_major_num = bool(_NUMBERED_RE.match(text_s)) and not is_sub_num
 
-            if q_match:
-                if current_q:
-                    raw_items.append(current_q)
-                q_code_num = q_match.group(1)
-                content_part = q_match.group(2).strip()
-                is_sub = ("." in q_code_num) or ("câu hỏi phụ" in line.lower()) or ("nhánh phụ" in line.lower())
-                parent = f"Q{q_code_num.split('.')[0]}" if "." in q_code_num else None
-                current_q = {
-                    "code": f"Q{q_code_num}",
-                    "topic": current_topic,
-                    "content": content_part or line,
-                    "sample_answer": "",
-                    "parent_code": parent,
-                    "is_followup": is_sub,
-                    "mode": "content",
-                }
-            elif n_match:
-                if current_q:
-                    raw_items.append(current_q)
-                q_code_num = n_match.group(1)
-                content_part = n_match.group(2).strip()
-                current_q = {
-                    "code": f"Q{q_code_num}",
-                    "topic": current_topic,
-                    "content": content_part or line,
-                    "sample_answer": "",
-                    "parent_code": None,
-                    "is_followup": False,
-                    "mode": "content",
-                }
-            elif current_q is not None:
-                ans_match = ANSWER_PATTERN.match(line)
-                if ans_match:
-                    current_q["mode"] = "answer"
-                    ans_text = ans_match.group(1).strip()
-                    current_q["sample_answer"] += (
-                        (" " if current_q["sample_answer"] else "") + ans_text
-                    )
-                elif current_q["mode"] == "answer":
-                    current_q["sample_answer"] += "\n" + line
+        # 1. Tiêu chí cha: '1. Kiến thức chuyên môn (6đ)'
+        if is_major_num:
+            m = _NUMBERED_RE.match(text_s)
+            body = m.group(2).strip()
+            crit = _make_criterion(body, score)
+            if crit:
+                crit["is_parent"] = True
+                crit["children"] = []
+                current["criteria"].append(crit)
+            return
+
+        # 2. Tiêu chí con: 'a. Nêu đúng định nghĩa (2đ)' hoặc '1.1. Nêu...' hoặc '- Trả lời lưu loát...'
+        if (is_bullet or is_sub_num) and current["criteria"]:
+            last_parent = None
+            for c in reversed(current["criteria"]):
+                if c.get("is_parent"):
+                    last_parent = c
+                    break
+
+            crit = _make_criterion(text_s, score)
+            if crit:
+                if last_parent:
+                    p_name = last_parent["name"]
+                    c_name = crit["name"]
+                    crit["name"] = f"[{p_name}] {c_name}"
+                    crit["is_child"] = True
+                    last_parent["children"].append(crit)
                 else:
-                    # Gom các dòng con, gạch đầu dòng, ý a, b, c vào cùng một câu hỏi
-                    current_q["content"] += "\n" + line
+                    current["criteria"].append(crit)
+            return
 
-        if current_q:
-            raw_items.append(current_q)
-    else:
-        # Style B: Tài liệu không có tiền tố 'Câu ...' (danh sách câu hỏi theo đoạn văn)
-        q_idx = 0
-        for line in filtered_lines:
-            lower = line.lower()
-            if (
-                re.match(r"^(?:phần|chương|chủ đề|bài)\s*\d+[:\.\-]", lower)
-                or (len(line) < 70 and line.isupper() and not line.endswith("?"))
-                or re.match(r"^[ivx]+\.\s+", lower)
-            ):
-                current_topic = line
+        # 3. Dòng mô tả nối tiếp của tiêu chí ngay trước
+        if score is None and current["criteria"] and not is_bullet and not is_major_num and not is_sub_num:
+            target = current["criteria"][-1]
+            if target.get("children"):
+                target = target["children"][-1]
+            target["description"] = (target["description"] + " " + text_s).strip()
+            return
+
+        # 4. Tiêu chí độc lập khác
+        crit = _make_criterion(text_s, score)
+        if crit:
+            current["criteria"].append(crit)
+
+    for block in blocks:
+        # ----------------------------- BẢNG -----------------------------
+        if block["type"] == "table":
+            rows = block["rows"]
+            header = " ".join(rows[0]).lower()
+            is_rubric_table = (current is not None and current["mode"] == "rubric") or (
+                current is not None and ("tiêu chí" in header or "điểm" in header) and "câu hỏi" not in header
+            )
+            is_question_table = any(k in header for k in ["câu hỏi", "nội dung", "đề bài", "question"])
+
+            if is_rubric_table and current is not None:
+                current["mode"] = "rubric"
+                for r_idx, row in enumerate(rows):
+                    joined = " ".join(row).lower()
+                    numeric_cells = [c for c in row if re.fullmatch(r"\d{1,2}(?:[.,]\d{1,2})?\s*(?:đ|điểm)?", c.strip(), re.I)]
+                    if r_idx == 0 and not numeric_cells and ("tiêu chí" in joined or "điểm" in joined or "stt" in joined):
+                        continue  # hàng tiêu đề bảng
+                    score = None
+                    for c in numeric_cells:
+                        val = _to_float(re.sub(r"[^\d.,]", "", c))
+                        if 0 < val <= 10:
+                            score = val
+                    if score is None:
+                        score = _extract_score(" ".join(row))
+                    texts = [c for c in row if c and c not in numeric_cells and not re.fullmatch(r"\d{1,2}", c)]
+                    if not texts:
+                        continue
+                    name = _strip_score(texts[0])
+                    desc = _strip_score(" ".join(texts[1:])) or name
+                    if name:
+                        current["criteria"].append({"name": name[:120], "description": desc, "max_score": score})
                 continue
 
-            if len(line) < 10:
+            if is_question_table:
+                hdr = [c.lower() for c in rows[0]]
+
+                def col(*keys: str) -> int:
+                    for i, h in enumerate(hdr):
+                        if any(k in h for k in keys):
+                            return i
+                    return -1
+
+                c_content = col("câu hỏi", "nội dung", "đề bài", "question")
+                c_answer = col("đáp án", "trả lời", "gợi ý", "answer", "lời giải")
+                c_rubric = col("tiêu chí", "rubric", "thang điểm", "biểu điểm", "barem")
+                c_code = col("mã", "stt", "code")
+                for row in rows[1:]:
+                    def cell(i: int) -> str:
+                        return row[i].strip() if 0 <= i < len(row) else ""
+                    content = cell(c_content)
+                    if not content:
+                        continue
+                    code_raw = cell(c_code)
+                    code = f"Q{code_raw}" if code_raw.isdigit() else (code_raw or None)
+                    item = _new_item(code, current_topic, content)
+                    if cell(c_answer):
+                        item["answer_lines"].append(cell(c_answer))
+                    if cell(c_rubric):
+                        for part in re.split(r"[;\n]|(?<=\d[đ\)])\s*,", cell(c_rubric)):
+                            crit = _make_criterion(part, _extract_score(part))
+                            if crit:
+                                item["criteria"].append(crit)
+                    start(item)
                 continue
 
-            q_idx += 1
-            raw_items.append({
-                "code": f"Q{q_idx}",
-                "topic": current_topic,
-                "content": line,
-                "sample_answer": "",
-                "parent_code": None,
-                "is_followup": False,
-                "mode": "content",
-            })
+            # Bảng không xác định: coi như văn bản của vùng hiện tại
+            for row in rows:
+                text = " | ".join(c for c in row if c)
+                if current is None:
+                    continue
+                if current["mode"] == "answer":
+                    current["answer_lines"].append(text)
+                elif current["mode"] == "content":
+                    current["content_lines"].append(text)
+            continue
 
-    questions: List[ExtractedQuestionItem] = []
-    for idx, item in enumerate(raw_items):
-        q_content = item["content"].strip()
-        p_lower = q_content.lower()
+        # ----------------------------- DÒNG VĂN BẢN -----------------------------
+        text = block["text"]
+        lower = text.lower()
+        if any(re.search(p, lower) for p in _IGNORE_LINE_PATTERNS):
+            continue
 
-        # Xác định độ khó dựa trên từ khóa trong câu hỏi
-        if any(k in p_lower for k in ["nêu ", "là gì", "định nghĩa", "bao gồm những gì"]):
-            diff = "easy"
-        elif any(k in p_lower for k in ["ví dụ", "tái cấu trúc", "so sánh", "phân biệt", "xây dựng", "viết use case"]):
-            diff = "hard"
-        else:
-            diff = "medium"
+        # 1. Tiêu đề phần / chương -> chủ đề (đóng câu hiện tại)
+        if _is_topic_line(text) or _SECTION_RE.match(text) and len(text) < 60 and not _looks_like_question(text):
+            if _SECTION_RE.match(text) and not _TOPIC_RE.match(text) and not text.isupper():
+                # "A. Lý thuyết", "I. Bài tập" -> chỉ là nhóm, không đổi chủ đề cụ thể
+                if current is not None:
+                    items.append(current)
+                    current = None
+                continue
+            if current is not None:
+                items.append(current)
+                current = None
+            current_topic = text
+            continue
 
-        sample_answer = item["sample_answer"].strip()
-        if not sample_answer:
-            # Kiểm tra xem trong content có chứa đáp án inline không
-            ans_match = re.search(r"(?:Đáp án|Gợi ý trả lời|Trả lời|Key points)[:\.]\s*(.+)$", q_content, re.IGNORECASE)
-            if ans_match:
-                sample_answer = ans_match.group(1).strip()
-                q_content = q_content[:ans_match.start()].strip()
+        # 2. Câu hỏi có tiền tố rõ ràng: "Câu 1:", "Câu 1.1 (Câu hỏi phụ):", "Bài 2."
+        q_match = _QUESTION_PREFIX_RE.match(text)
+        if q_match:
+            num = q_match.group(1)
+            note = (q_match.group(2) or "").lower()
+            body = q_match.group(3).strip()
+            is_sub = "." in num or "phụ" in note or "hỏi tiếp" in note
+            parent = f"Q{num.split('.')[0]}" if "." in num else (
+                items[-1]["code"] if is_sub and items else None
+            )
+            start(_new_item(f"Q{num}", current_topic, body, parent, is_sub))
+            continue
+
+        # 3. Tiêu đề vùng Rubric (chỉ chuyển vùng, không chèn vào nội dung)
+        r_match = _RUBRIC_HEADER_RE.match(text) if "?" not in text else None
+        if r_match and current is not None and (_extract_score(text) is None or not r_match.group(1)):
+            rest = r_match.group(1).strip()
+            prefix_part = text[: len(text) - len(rest)] if rest else text
+            if not rest or re.search(r"[:\.\-–\)]", prefix_part) or _extract_score(rest) is not None:
+                current["mode"] = "rubric"
+                if rest and _extract_score(rest) is not None:
+                    add_criterion_line(rest)
+                continue
+        if r_match and current is not None and current["mode"] in ("content", "answer") and _extract_score(text) is not None:
+            # "Tiêu chí 1: Định nghĩa đúng (3đ)" xuất hiện ngay sau câu hỏi
+            current["mode"] = "rubric"
+            add_criterion_line(text)
+            continue
+
+        # 4. Tiêu đề vùng Đáp án
+        a_match = _ANSWER_HEADER_RE.match(text) if "?" not in text else None
+        if a_match and current is not None:
+            rest = a_match.group(1).strip()
+            prefix_part = text[: len(text) - len(rest)] if rest else text
+            if not rest or re.search(r"[:\.\-–\)]", prefix_part):
+                current["mode"] = "answer"
+                if rest:
+                    current["answer_lines"].append(rest)
+                continue
+
+        is_bullet = bool(_BULLET_RE.match(text))
+        n_match = _NUMBERED_RE.match(text)
+
+        # 5. Đang ở vùng rubric / đáp án
+        if current is not None and current["mode"] in ("rubric", "answer"):
+            has_score = _extract_score(text) is not None
+            has_qmark = "?" in text
+            rubric_has_scores = any(c.get("max_score") is not None for c in current["criteria"])
+            looks_q_in_rubric = (
+                current["mode"] == "rubric"
+                and _looks_like_question(text)
+                and (
+                    rubric_has_scores
+                    or (len(current["criteria"]) >= 2 and not n_match and not block.get("is_list"))
+                    or (n_match and int(n_match.group(1)) == 1 and len(current["criteria"]) >= 1)
+                )
+            )
+            looks_q_in_answer = (
+                current["mode"] == "answer"
+                and _looks_like_question(text)
+                and len(current["answer_lines"]) >= 1
+                and not block.get("is_list")
+            )
+            new_question = (
+                (not uses_prefix)
+                and not is_bullet
+                and not has_score
+                and (has_qmark or looks_q_in_rubric or looks_q_in_answer)
+            )
+            if not new_question:
+                if current["mode"] == "rubric":
+                    add_criterion_line(text, is_list=bool(block.get("is_list")))
+                else:
+                    current["answer_lines"].append(text)
+                continue
+            # Không có tiền tố "Câu": câu hỏi mới kết thúc vùng rubric/đáp án của câu trước
+            start(_new_item(None, current_topic, _ENUM_PREFIX_RE.sub("", text, count=1) if n_match else text))
+            continue
+
+        # 6. Vùng nội dung câu hỏi
+        if uses_prefix:
+            if current is None:
+                continue  # văn bản mở đầu trước câu hỏi đầu tiên
+            current["content_lines"].append(text)
+            continue
+
+        # Tài liệu không dùng tiền tố "Câu": mỗi đoạn nghi vấn là một câu hỏi mới,
+        # gạch đầu dòng / ý a,b,c / đoạn mô tả thì gộp vào câu hiện tại.
+        if is_bullet and current is not None:
+            current["content_lines"].append(text)
+            continue
+        if n_match and _extract_score(text) is None:
+            start(_new_item(f"Q{n_match.group(1)}", current_topic, n_match.group(2).strip()))
+            continue
+        if current is None or _looks_like_question(text) or (block.get("is_list") and len(text) > 15):
+            if len(text) < 8 and current is not None:
+                current["content_lines"].append(text)
+                continue
+            start(_new_item(None, current_topic, text))
+            continue
+        current["content_lines"].append(text)
+
+    if current is not None:
+        items.append(current)
+
+    # Loại bỏ câu rỗng & đánh mã liên tục cho câu chưa có mã
+    cleaned: list[dict] = []
+    used_codes: set[str] = set()
+    seq = 0
+    for it in items:
+        content = "\n".join(l for l in it["content_lines"] if l).strip()
+        if len(content) < 5:
+            continue
+        seq += 1
+        code = it["code"] or f"Q{seq}"
+        while code.upper() in used_codes:
+            seq += 1
+            code = f"Q{seq}"
+        used_codes.add(code.upper())
+        it["code"] = code
+        it["content"] = content
+        it["sample_answer"] = "\n".join(it["answer_lines"]).strip()
+        # Phẳng hóa tiêu chí phân cấp cha - con: giữ ý con có tiền tố [Tên tiêu chí cha]
+        flattened_criteria = []
+        for c in it["criteria"]:
+            if c.get("children"):
+                flattened_criteria.extend(c["children"])
             else:
-                sample_answer = _generate_tailored_sample_answer(q_content)
+                flattened_criteria.append(c)
+        it["criteria"] = flattened_criteria
+        cleaned.append(it)
+    return cleaned
 
-        first_line = q_content.splitlines()[0] if q_content else f"Câu hỏi {idx + 1}"
-        title = first_line[:65].rstrip() + ("..." if len(first_line) > 65 else "")
 
-        criteria = _generate_tailored_criteria(q_content)
-        tot_score = round(sum(c.max_score for c in criteria), 1)
+def _normalize_criteria(raw: list[dict]) -> List[RubricCriterionItem]:
+    """Giữ nguyên điểm của giảng viên; chỉ chia đều khi file không ghi điểm cho tiêu chí nào."""
+    if not raw:
+        return []
+    scores = [c.get("max_score") for c in raw]
+    if all(s is None or s <= 0 for s in scores):
+        each = round(10.0 / len(raw), 1)
+        filled = [each] * len(raw)
+        filled[-1] = round(10.0 - each * (len(raw) - 1), 1)
+    else:
+        filled = [float(s) if s and s > 0 else 0.0 for s in scores]
+    result: List[RubricCriterionItem] = []
+    for c, sc in zip(raw, filled):
+        result.append(
+            RubricCriterionItem(
+                name=str(c.get("name") or "Tiêu chí")[:150],
+                description=str(c.get("description") or c.get("name") or ""),
+                max_score=round(sc, 2),
+            )
+        )
+    return result
 
+
+def _make_title(content: str) -> str:
+    first = content.splitlines()[0].strip()
+    first = re.sub(r"^(?:hãy\s+)", "", first, flags=re.IGNORECASE)
+    if len(first) <= 95:
+        title = first
+    else:
+        m = re.match(r"^(.{15,95}?[\?\.])(?:\s|$)", first)
+        title = m.group(1) if m else (first[:92].rsplit(" ", 1)[0] + "...")
+    return title[:1].upper() + title[1:] if title else "Câu hỏi"
+
+
+def _guess_difficulty(content: str) -> str:
+    p = content.lower()
+    if any(k in p for k in ["so sánh", "phân biệt", "đánh giá", "thiết kế", "xây dựng", "tái cấu trúc", "ví dụ", "viết use case"]):
+        return "hard"
+    if any(k in p for k in ["là gì", "định nghĩa", "kể tên", "liệt kê", "nêu "]):
+        return "easy"
+    return "medium"
+
+
+def _enrich_missing_with_gemini(items: list[dict]) -> None:
+    """Gọi Gemini CHỈ để bổ sung tiêu đề tóm tắt, đáp án, rubric mà file gốc không có.
+
+    Không bao giờ sửa nội dung câu hỏi; không ghi đè đáp án / rubric có sẵn trong file.
+    """
+    api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
+    if not api_key or not items:
+        return
+
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "items": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "code": {"type": "STRING"},
+                        "title": {"type": "STRING"},
+                        "sample_answer": {"type": "STRING"},
+                        "criteria": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "name": {"type": "STRING"},
+                                    "description": {"type": "STRING"},
+                                    "max_score": {"type": "NUMBER"},
+                                },
+                                "required": ["name", "description", "max_score"],
+                            },
+                        },
+                    },
+                    "required": ["code", "title"],
+                },
+            }
+        },
+        "required": ["items"],
+    }
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as exc:  # pragma: no cover
+        print(f"[AI-SERVICE] Khong khoi tao duoc Gemini: {exc}", flush=True)
+        return
+
+    by_code = {it["code"]: it for it in items}
+    batch_size = 8
+    for start_idx in range(0, len(items), batch_size):
+        batch = items[start_idx:start_idx + batch_size]
+        payload = []
+        for it in batch:
+            payload.append({
+                "code": it["code"],
+                "topic": it["topic"],
+                "question": it["content"],
+                "existing_answer": it["sample_answer"] or None,
+                "need_answer": not it["sample_answer"],
+                "need_rubric": not it["criteria"],
+            })
+        prompt = (
+            "Bạn là giảng viên CNTT soạn tài liệu chấm thi vấn đáp. Với MỖI câu hỏi dưới đây (giữ đúng `code`):\n"
+            "1. `title`: tóm tắt chủ đề câu hỏi thành cụm danh từ 3-8 từ (KHÔNG chép lại nguyên câu hỏi).\n"
+            "2. Nếu `need_answer` = true: viết `sample_answer` là đáp án tham chiếu chuyên môn, chính xác, "
+            "trả lời ĐÚNG và ĐỦ các ý mà câu hỏi yêu cầu (gạch đầu dòng ngắn gọn, 80-200 từ). "
+            "Nếu `need_answer` = false: để `sample_answer` rỗng.\n"
+            "3. Nếu `need_rubric` = true: tạo `criteria` gồm 3-4 tiêu chí bám sát các ý trong câu hỏi "
+            "(dựa trên existing_answer nếu có), tổng `max_score` ĐÚNG 10.0. Nếu false: để `criteria` rỗng.\n"
+            "Không được thay đổi hay bịa thêm câu hỏi. Trả về JSON theo schema.\n\n"
+            f"DANH SÁCH CÂU HỎI:\n{json.dumps(payload, ensure_ascii=False, indent=1)}"
+        )
+        try:
+            response = client.models.generate_content(
+                model=settings.default_llm_model or "gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    temperature=0.2,
+                ),
+            )
+            parsed = json.loads((response.text or "").strip() or "{}")
+        except Exception as exc:
+            print(f"[AI-SERVICE] Gemini bo sung that bai (batch {start_idx}): {exc}", flush=True)
+            continue
+
+        for out in parsed.get("items", []):
+            it = by_code.get(str(out.get("code", "")).strip())
+            if it is None:
+                continue
+            title = str(out.get("title") or "").strip()
+            if title:
+                it["ai_title"] = title[:120]
+            if not it["sample_answer"]:
+                ans = str(out.get("sample_answer") or "").strip()
+                if ans:
+                    it["sample_answer"] = ans
+                    it["answer_by_ai"] = True
+            if not it["criteria"] and out.get("criteria"):
+                crits = [
+                    {"name": c.get("name"), "description": c.get("description"), "max_score": float(c.get("max_score") or 0)}
+                    for c in out["criteria"]
+                    if c.get("name")
+                ]
+                total = sum(c["max_score"] for c in crits)
+                if crits and total > 0 and abs(total - 10.0) > 0.05:
+                    for c in crits:
+                        c["max_score"] = round(c["max_score"] * 10.0 / total, 1)
+                    crits[-1]["max_score"] = round(10.0 - sum(c["max_score"] for c in crits[:-1]), 1)
+                if crits:
+                    it["criteria"] = crits
+                    it["rubric_by_ai"] = True
+
+
+def _build_answer_from_criteria(criteria: List[RubricCriterionItem]) -> str:
+    lines = ["Các ý trọng tâm cần trình bày theo Rubric chấm điểm:"]
+    for c in criteria:
+        name = c.name.strip()
+        desc = c.description.strip()
+        if desc and desc.lower() != name.lower():
+            lines.append(f"- {name} ({c.max_score:g}đ): {desc}")
+        else:
+            lines.append(f"- {name} ({c.max_score:g}đ)")
+    return "\n".join(lines)
+
+
+def _items_to_questions(items: list[dict]) -> List[ExtractedQuestionItem]:
+    questions: List[ExtractedQuestionItem] = []
+    for idx, it in enumerate(items):
+        content = it["content"]
+        has_file_criteria = bool(it["criteria"]) and not it.get("rubric_by_ai")
+        criteria = _normalize_criteria(it["criteria"]) or _generate_tailored_criteria(content)
+        sample_answer = (it.get("sample_answer") or "").strip()
+        if not sample_answer:
+            if has_file_criteria:
+                sample_answer = _build_answer_from_criteria(criteria)
+            else:
+                sample_answer = _generate_tailored_sample_answer(content)
+                it["answer_by_ai"] = True
+        tags = [it["topic"]] if it["topic"] else []
+        if it.get("answer_by_ai"):
+            tags.append("Đáp án do AI soạn")
+        if it.get("rubric_by_ai") or not it["criteria"]:
+            tags.append("Rubric do AI đề xuất")
         questions.append(
             ExtractedQuestionItem(
                 temp_id=f"doc-{idx + 1}",
-                code=item["code"],
-                topic=item["topic"],
-                title=title,
-                content=q_content,
+                code=it["code"],
+                topic=it["topic"],
+                title=it.get("ai_title") or _make_title(content),
+                content=content,
                 sample_answer=sample_answer,
-                difficulty=diff,
+                difficulty=_guess_difficulty(content),
                 time_limit_seconds=180,
-                parent_code=item["parent_code"],
-                is_followup=item["is_followup"],
-                tags=[item["topic"]] if item["topic"] else ["CNPM"],
+                parent_code=it["parent_code"],
+                is_followup=it["is_followup"],
+                tags=tags,
                 criteria=criteria,
-                total_score=tot_score,
+                total_score=round(sum(c.max_score for c in criteria), 1),
                 status="valid",
                 errors=[],
                 warnings=[],
             )
         )
-
     return questions
 
 
-def _parse_word_with_gemini(file_bytes: bytes, filename: str) -> Optional[List[ExtractedQuestionItem]]:
-    """Gọi Gemini trích xuất cấu trúc khi có kết nối mạng và API key."""
+def _parse_word_with_gemini(blocks: list[dict]) -> Optional[List[ExtractedQuestionItem]]:
+    """Phương án dự phòng: khi parser cấu trúc không nhận ra câu hỏi nào, nhờ Gemini bóc tách toàn bộ."""
     api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not api_key:
+    full_text = _blocks_to_text(blocks)
+    if not api_key or not full_text.strip():
         return None
 
-    lower_fn = filename.lower()
-    paragraphs: list[str] = []
-    if lower_fn.endswith(".docx"):
-        import docx
-        doc = docx.Document(io.BytesIO(file_bytes))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        for table in doc.tables:
-            for row in table.rows:
-                row_text = " | ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
-                if row_text:
-                    paragraphs.append(row_text)
-    else:
-        try:
-            raw_text = file_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            raw_text = file_bytes.decode("latin-1", errors="ignore")
-        paragraphs = [line.strip() for line in raw_text.splitlines() if line.strip()]
-
-    full_text = "\n".join(paragraphs)
-    if not full_text.strip():
-        return None
-
+    system_prompt = """
+BẠN LÀ CHUYÊN GIA BÓC TÁCH ĐỀ THI VẤN ĐÁP. QUY TẮC BẮT BUỘC:
+1. Mỗi câu hỏi gồm 3 vùng tách biệt:
+   - `content`: CHỈ nguyên văn câu hỏi phát vấn (kể cả các ý a, b, c / gạch đầu dòng thuộc câu hỏi).
+   - `sample_answer`: phần "Đáp án / Gợi ý / Trả lời / Hướng dẫn giải" trong tài liệu (nguyên văn).
+     Nếu tài liệu không có, tự soạn đáp án chuyên môn chính xác.
+   - `criteria`: phần "Tiêu chí chấm điểm / Rubric / Thang điểm / Biểu điểm" trong tài liệu (giữ nguyên tên và điểm).
+     Nếu tài liệu không có, tự tạo 3-4 tiêu chí, tổng đúng 10.0.
+2. Dòng tiêu đề như "Tiêu chí chấm điểm (Rubric)", "Đáp án:" KHÔNG thuộc `content`.
+3. Các dòng đánh số 1., 2., 3. nằm dưới "Tiêu chí chấm điểm" là TIÊU CHÍ, KHÔNG phải câu hỏi mới.
+4. Dòng "PHẦN ...", "CHƯƠNG ..." là `topic`, không phải câu hỏi.
+5. Không bịa câu hỏi không có trong tài liệu. `title` là cụm tóm tắt 3-8 từ.
+"""
     try:
         client = genai.Client(api_key=api_key)
-        system_prompt = """
-BẠN LÀ CHUYÊN GIA THẨM ĐỊNH VÀ BÓC TÁCH ĐỀ THI VẤN ĐÁP (ORAL EXAM PRACTICE) CHUẨN XÁC.
-QUY TẮC BÓC TÁCH BẮT BUỘC (TUYỆT ĐỐI TUÂN THỦ):
-1. NHẬN DIỆN RANH GIỚI CÂU HỎI CHUẨN XÁC:
-   - Câu hỏi trong tài liệu thường bắt đầu bằng: "Câu 1:", "Câu 2:", "Câu 1.1:", "Bài 1:", "Question 1:", hoặc số thứ tự "1.", "2." v.v.
-   - TOÀN BỘ các dòng giải thích, ví dụ, gạch đầu dòng (-), ý phụ (a, b, c) nằm ngay dưới câu hỏi ĐỀU LÀ NỘI DUNG CỦA CÂU HỎI ĐÓ.
-   - TUYỆT ĐỐI KHÔNG được cắt các gạch đầu dòng hoặc ý mô tả thành các câu hỏi mới làm đảo lộn thứ tự!
-
-2. TÁCH BIỆT ĐÁP ÁN THAM CHIẾU:
-   - Nếu dưới câu hỏi có phần ghi "Đáp án:", "Trả lời:", "Gợi ý:", "Key points:", hãy trích xuất toàn bộ phần đó vào `sample_answer`, KHÔNG coi đáp án là câu hỏi mới.
-   - Nếu tài liệu CHƯA CÓ đáp án mẫu, hãy tự động soạn câu trả lời tham chiếu chuẩn xác, súc tích cho câu hỏi đó vào `sample_answer`.
-
-3. CÂU HỎI PHỤ & NHÁNH HỎI TIẾP:
-   - Nếu câu hỏi có đánh số dạng con như "Câu 1.1", "Câu 1.2" hoặc ghi rõ "(Câu hỏi phụ)", hãy đặt `parent_code` trỏ về câu cha tương ứng (ví dụ: "Q1") và đặt `is_followup = true`.
-
-4. RUBRIC THANG ĐIỂM CHUẨN 10.0Đ:
-   - Xây dựng 3-4 tiêu chí Rubric đánh giá chi tiết bám sát vào nội dung câu hỏi.
-   - TỔNG ĐIỂM TẤT CẢ TIÊU CHÍ BẮT BUỘC PHẢI BẰNG ĐÚNG 10.0 ĐIỂM.
-
-5. NGUYÊN TẮC KHÔNG BỊA ĐẶT (ANTI-HALLUCINATION):
-   - Trích xuất ĐÚNG 100% nội dung câu hỏi có trong tài liệu của giảng viên, TUYỆT ĐỐI KHÔNG BỊA RA câu hỏi không có trong file.
-"""
         response = client.models.generate_content(
             model=settings.default_llm_model or "gemini-2.5-flash",
-            contents=f"{system_prompt}\n\nVĂN BẢN ĐỀ THI CẦN BÓC TÁCH NGUYÊN VĂN:\n===================\n{full_text[:40000]}",
+            contents=f"{system_prompt}\n\nTÀI LIỆU:\n===================\n{full_text[:40000]}",
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=EXTRACTION_JSON_SCHEMA,
                 temperature=0.1,
             ),
         )
-        result_text = (response.text or "").strip()
-        parsed = json.loads(result_text)
-        raw_questions = parsed.get("questions", [])
-
-        if not raw_questions:
-            return None
-
-        questions: List[ExtractedQuestionItem] = []
-        for i, q in enumerate(raw_questions):
-            criteria_items: List[RubricCriterionItem] = []
-            for c in q.get("criteria", []):
-                criteria_items.append(
-                    RubricCriterionItem(
-                        name=str(c.get("name", "Tiêu chí")),
-                        description=str(c.get("description", "")),
-                        max_score=float(c.get("max_score", 2.5)),
-                    )
-                )
-            if not criteria_items:
-                criteria_items = _generate_tailored_criteria(str(q.get("content", "")))
-
-            tot_score = round(sum(c.max_score for c in criteria_items), 1)
-            q_content = str(q.get("content") or "").strip()
-            item = ExtractedQuestionItem(
-                temp_id=f"doc-{i + 1}",
-                code=str(q.get("code") or f"Q{i + 1}"),
-                topic=str(q.get("topic") or "Kiến thức chuyên ngành"),
-                title=str(q.get("title") or f"Câu hỏi {i + 1}"),
-                content=q_content,
-                sample_answer=str(q.get("sample_answer") or _generate_tailored_sample_answer(q_content)),
-                difficulty=_normalize_difficulty(q.get("difficulty")),
-                time_limit_seconds=int(q.get("time_limit_seconds") or 180),
-                parent_code=q.get("parent_code") or None,
-                is_followup=bool(q.get("is_followup", False)),
-                tags=q.get("tags") or ["Vấn đáp"],
-                criteria=criteria_items,
-                total_score=tot_score,
-                status="valid",
-                errors=[],
-                warnings=[],
-            )
-            questions.append(item)
-
-        return questions
+        parsed = json.loads((response.text or "").strip())
     except Exception as e:
-        print(f"[AI-SERVICE] Loi khi goi Gemini: {e}. Chuyen sang Heuristic Parser.", flush=True)
+        print(f"[AI-SERVICE] Loi khi goi Gemini (fallback): {e}", flush=True)
         return None
+
+    items: list[dict] = []
+    for i, q in enumerate(parsed.get("questions", [])):
+        content = str(q.get("content") or "").strip()
+        if not content:
+            continue
+        items.append({
+            "code": str(q.get("code") or f"Q{i + 1}"),
+            "topic": str(q.get("topic") or "Kiến thức chuyên ngành"),
+            "content": content,
+            "sample_answer": str(q.get("sample_answer") or "").strip(),
+            "criteria": [
+                {"name": c.get("name"), "description": c.get("description", ""), "max_score": float(c.get("max_score") or 0)}
+                for c in q.get("criteria", [])
+                if c.get("name")
+            ],
+            "parent_code": q.get("parent_code") or None,
+            "is_followup": bool(q.get("is_followup", False)),
+            "ai_title": str(q.get("title") or "").strip() or None,
+        })
+    return _items_to_questions(items) if items else None
+
+
+def _parse_word_document(file_bytes: bytes, filename: str) -> List[ExtractedQuestionItem]:
+    blocks = _read_document_blocks(file_bytes, filename)
+    items = _structure_parse(blocks)
+    if not items:
+        return _parse_word_with_gemini(blocks) or []
+    _enrich_missing_with_gemini(items)
+    return _items_to_questions(items)
 
 
 def extract_questions_from_file(
@@ -648,7 +1083,7 @@ def extract_questions_from_file(
         questions = _parse_excel(file_bytes)
     else:
         # Thử Gemini trước; nếu không có mạng / lỗi thì dùng Heuristic Parser chuẩn xác
-        questions = _parse_word_with_gemini(file_bytes, file_name) or _parse_word_smart_heuristic(file_bytes, file_name)
+        questions = _parse_word_document(file_bytes, file_name)
 
     existing_codes = {q.code.strip().upper() for q in questions if q.code}
     valid_count = 0

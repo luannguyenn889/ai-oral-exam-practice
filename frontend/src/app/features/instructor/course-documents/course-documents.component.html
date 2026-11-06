@@ -175,19 +175,22 @@
     </div>
 
     @if (cleanedQuery) {
-    <div class="cleaned-query-banner">
-      <strong>Câu truy vấn sau khi lọc từ đệm vấn đáp (clean_oral_query):</strong>
-      <code>{{ cleanedQuery }}</code>
+    <div class="cleaned-query-banner" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+      <div>
+        <strong>Câu truy vấn sau khi lọc từ đệm vấn đáp (clean_oral_query):</strong>
+        <code>{{ cleanedQuery }}</code>
+      </div>
+      @if (searchResults.length > 0) {
+      <button type="button" class="btn btn--outline btn--sm" (click)="toggleShowResults()">
+        <span class="material-symbols-outlined">{{ showResults ? 'visibility_off' : 'visibility' }}</span>
+        {{ showResults ? 'Ẩn kết quả (' + searchResults.length + ' đoạn)' : 'Xem kết quả (' + searchResults.length + ' đoạn)' }}
+      </button>
+      }
     </div>
     }
 
-    @if (hasSearched && !searching) {
-    @if (searchResults.length === 0) {
-    <div class="empty-files">
-      <p>Không tìm thấy đoạn văn bản nào khớp trong môn {{ courseId }}.</p>
-    </div>
-    } @else {
-    <div class="rag-results-list">
+    @if (!searching && searchResults.length > 0 && showResults) {
+    <div class="rag-results-list" style="margin-top: 1rem;">
       @for (chunk of searchResults; track chunk.chunkId; let idx = $index) {
       <div class="rag-chunk-card">
         <div class="rag-chunk-card__header">
@@ -209,7 +212,10 @@
       </div>
       }
     </div>
-    }
+    } @else if (!searching && cleanedQuery && searchResults.length === 0) {
+    <div class="empty-files" style="margin-top: 1rem;">
+      <p>Không tìm thấy đoạn văn bản nào khớp trong môn {{ courseId }}.</p>
+    </div>
     }
   </section>
   }
