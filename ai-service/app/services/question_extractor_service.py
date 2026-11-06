@@ -243,23 +243,25 @@ def _parse_excel(file_bytes: bytes) -> List[ExtractedQuestionItem]:
         key_points = get_col_val(row_data, "ý chính", "y chinh", "key", "rubric", "tiêu chí")
         criteria: List[RubricCriterionItem] = []
         if key_points:
-            points = [p.strip() for p in re.split(r"[;\n\r\•\-\*]+", key_points) if p.strip()]
-            if len(points) >= 2:
-                each_score = round(10.0 / len(points), 1)
-                for p_idx, pt in enumerate(points):
-                    criteria.append(
-                        RubricCriterionItem(
-                            name=f"Tiêu chí {p_idx + 1}: {pt[:40]}",
-                            description=pt,
-                            max_score=each_score if p_idx < len(points) - 1 else round(10.0 - each_score * (len(points) - 1), 1),
-                        )
-                    )
+            # Tách theo dòng mới, dấu chấm phẩy, dấu bullet (•) hoặc gạch đầu dòng ở ĐẦU ý (không cắt từ ghép Client-Server)
+            raw_parts = [
+                p.strip()
+                for p in re.split(r"(?:\r?\n|;|•)+|(?:^|\s+)(?:[-*+]\s+)", key_points)
+                if p and p.strip()
+            ]
+            raw_crits = []
+            for pt in raw_parts:
+                c_dict = _make_criterion(pt, _extract_score(pt))
+                if c_dict:
+                    raw_crits.append(c_dict)
+            if raw_crits:
+                criteria = _normalize_criteria(_reconcile_parent_child_criteria(raw_crits))
         if not criteria:
             criteria = _generate_tailored_criteria(content)
 
         total_score = round(sum(c.max_score for c in criteria), 1)
         if not title and content:
-            title = content[:60] + "..." if len(content) > 60 else content
+            title = _make_title(content)
 
         if not sample_answer and content:
             sample_answer = _generate_tailored_sample_answer(content)
@@ -333,9 +335,10 @@ _RUBRIC_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 _SCORE_RE = re.compile(
-    r"(?<![\w.,])(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:điểm|diem|đ|pts?|points?)(?!\w)",
+    r"(?<![\w.,])(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:điểm|diem|đ|pts?|points?|/10\b)(?!\w)",
     re.IGNORECASE,
 )
+_PERCENT_SCORE_RE = re.compile(r"(?<![\w.,])(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
 _TRAILING_SCORE_RE = re.compile(r"[:\-–|]\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*$")
 
 _QUESTION_CUE_START_RE = re.compile(
@@ -370,8 +373,76 @@ def _to_float(raw: str) -> float:
         return 0.0
 
 
+def _detect_word_list_info(child: Any, para: Any, doc: Any) -> tuple[bool, Optional[str], int]:
+    """Trích xuất thông tin danh sách tự động của Word: (is_list, list_kind, list_level).
+
+    list_kind: 'ordered' (1, 2, 3...) | 'bullet' (•, -, a, b...) | None
+    list_level: 0 (cấp cha), >=1 (cấp con)
+    """
+    ppr = child.pPr
+    style_name = (para.style.name or "").lower() if para.style is not None else ""
+    is_list = False
+    list_kind: Optional[str] = None
+    list_level = 0
+
+    # 1. Kiểm tra qua tên Style của Word (VD: 'List Number', 'List Bullet', 'List Number 2')
+    if "list" in style_name:
+        is_list = True
+        if "bullet" in style_name:
+            list_kind = "bullet"
+        elif "number" in style_name:
+            list_kind = "ordered"
+        m_lvl = re.search(r"(\d+)$", style_name.strip())
+        if m_lvl:
+            list_level = max(0, int(m_lvl.group(1)) - 1)
+
+    # 2. Kiểm tra qua thuộc tính XML w:numPr (ilvl & numId)
+    if ppr is not None and ppr.numPr is not None:
+        is_list = True
+        ilvl_el = getattr(ppr.numPr, "ilvl", None)
+        if ilvl_el is not None and getattr(ilvl_el, "val", None) is not None:
+            try:
+                list_level = int(ilvl_el.val)
+            except (TypeError, ValueError):
+                pass
+        num_id_el = getattr(ppr.numPr, "numId", None)
+        num_id = getattr(num_id_el, "val", None) if num_id_el is not None else None
+        if num_id is not None and list_kind is None:
+            try:
+                numbering = doc.part.numbering_part.element
+                abs_id = None
+                for num in numbering.findall(".//{*}num"):
+                    if num.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId") == str(num_id):
+                        abs_el = num.find("{*}abstractNumId")
+                        if abs_el is not None:
+                            abs_id = abs_el.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val")
+                        break
+                if abs_id is not None:
+                    for abs_num in numbering.findall(".//{*}abstractNum"):
+                        if abs_num.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}abstractNumId") == str(abs_id):
+                            for lvl in abs_num.findall("{*}lvl"):
+                                if lvl.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl") == str(list_level):
+                                    fmt_el = lvl.find("{*}numFmt")
+                                    fmt_val = fmt_el.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") if fmt_el is not None else ""
+                                    if fmt_val == "bullet":
+                                        list_kind = "bullet"
+                                    elif fmt_val in ("lowerLetter", "upperLetter", "lowerRoman"):
+                                        list_kind = "bullet"
+                                        list_level = max(1, list_level)
+                                    else:
+                                        list_kind = "ordered"
+                                    break
+                            break
+            except Exception:
+                pass
+        if list_kind is None:
+            list_kind = "bullet" if list_level >= 1 else "ordered"
+
+    return is_list, list_kind, list_level
+
+
 def _read_document_blocks(file_bytes: bytes, filename: str) -> list[dict]:
-    """Đọc tài liệu theo đúng thứ tự: [{'type':'line','text','is_list'} | {'type':'table','rows'}]."""
+    """Đọc tài liệu theo đúng thứ tự: [{'type':'line','text','is_list','list_kind','list_level'} | {'type':'table','rows'}]."""
     blocks: list[dict] = []
     if filename.lower().endswith(".docx"):
         import docx
@@ -383,15 +454,25 @@ def _read_document_blocks(file_bytes: bytes, filename: str) -> list[dict]:
             tag = child.tag.rsplit("}", 1)[-1]
             if tag == "p":
                 para = Paragraph(child, doc)
-                ppr = child.pPr
-                is_list = bool(ppr is not None and ppr.numPr is not None)
-                style_name = (para.style.name or "").lower() if para.style is not None else ""
-                if "list" in style_name:
-                    is_list = True
-                for part in (para.text or "").split("\n"):
+                is_list, list_kind, list_level = _detect_word_list_info(child, para, doc)
+                raw_para_text = para.text or ""
+                # Nếu đoạn văn chứa TextBox / Shape mà para.text rỗng thì lấy thêm text trong w:txbxContent
+                if not raw_para_text.strip():
+                    txbx_texts = [
+                        "".join(p_el.itertext()).strip()
+                        for p_el in child.findall(".//{*}txbxContent//{*}p")
+                    ]
+                    raw_para_text = "\n".join(t for t in txbx_texts if t)
+                for part in raw_para_text.split("\n"):
                     text = re.sub(r"\s+", " ", part).strip()
                     if text:
-                        blocks.append({"type": "line", "text": text, "is_list": is_list})
+                        blocks.append({
+                            "type": "line",
+                            "text": text,
+                            "is_list": is_list,
+                            "list_kind": list_kind,
+                            "list_level": list_level,
+                        })
             elif tag == "tbl":
                 table = Table(child, doc)
                 rows: list[list[str]] = []
@@ -434,6 +515,11 @@ def _extract_score(text: str) -> Optional[float]:
     matches = list(_SCORE_RE.finditer(text))
     if matches:
         return _to_float(matches[-1].group(1))
+    pct_matches = list(_PERCENT_SCORE_RE.finditer(text))
+    if pct_matches:
+        pct = _to_float(pct_matches[-1].group(1))
+        if 0 < pct <= 100:
+            return round(pct / 10.0, 2)
     m = _TRAILING_SCORE_RE.search(text)
     if m:
         return _to_float(m.group(1))
@@ -442,6 +528,7 @@ def _extract_score(text: str) -> Optional[float]:
 
 def _strip_score(text: str) -> str:
     cleaned = _SCORE_RE.sub("", text)
+    cleaned = _PERCENT_SCORE_RE.sub("", cleaned)
     cleaned = _TRAILING_SCORE_RE.sub("", cleaned)
     cleaned = re.sub(r"\(\s*\)|\[\s*\]", "", cleaned)
     return cleaned.strip(" \t:;,-–|()[]")
@@ -513,18 +600,34 @@ def _structure_parse(blocks: list[dict]) -> list[dict]:
             items.append(current)
         current = item
 
-    def add_criterion_line(text: str, is_list: bool = False) -> None:
+    def add_criterion_line(
+        text: str,
+        is_list: bool = False,
+        list_kind: Optional[str] = None,
+        list_level: int = 0,
+    ) -> None:
         assert current is not None
         score = _extract_score(text)
         text_s = text.strip()
         is_sub_num = bool(_SUB_NUMBERED_RE.match(text_s))
-        is_bullet = bool(_BULLET_RE.match(text_s)) or is_list
-        is_major_num = bool(_NUMBERED_RE.match(text_s)) and not is_sub_num
+        is_explicit_bullet = bool(_BULLET_RE.match(text_s))
+        is_explicit_major = bool(_NUMBERED_RE.match(text_s)) and not is_sub_num
 
-        # 1. Tiêu chí cha: '1. Kiến thức chuyên môn (6đ)'
+        # Nhận diện tiêu chí cấp cha (gõ tay "1." hoặc Word List Number cấp 0)
+        is_major_num = is_explicit_major or (
+            is_list and list_kind == "ordered" and list_level == 0 and not is_explicit_bullet and not is_sub_num
+        )
+        # Nhận diện tiêu chí cấp con (gõ tay "a.", "1.1", "-" hoặc Word List Bullet / cấp >= 1)
+        is_child_item = (
+            is_sub_num
+            or is_explicit_bullet
+            or (is_list and (list_kind == "bullet" or list_level >= 1))
+        )
+
+        # 1. Tiêu chí cha: '1. Kiến thức chuyên môn (6đ)' hoặc List Number cấp 0
         if is_major_num:
             m = _NUMBERED_RE.match(text_s)
-            body = m.group(2).strip()
+            body = m.group(2).strip() if m else text_s
             crit = _make_criterion(body, score)
             if crit:
                 crit["is_parent"] = True
@@ -532,8 +635,8 @@ def _structure_parse(blocks: list[dict]) -> list[dict]:
                 current["criteria"].append(crit)
             return
 
-        # 2. Tiêu chí con: 'a. Nêu đúng định nghĩa (2đ)' hoặc '1.1. Nêu...' hoặc '- Trả lời lưu loát...'
-        if (is_bullet or is_sub_num) and current["criteria"]:
+        # 2. Tiêu chí con: 'a. Nêu đúng định nghĩa (2đ)', '1.1. Nêu...', '- Trả lời...' hoặc List Bullet
+        if is_child_item and current["criteria"]:
             last_parent = None
             for c in reversed(current["criteria"]):
                 if c.get("is_parent"):
@@ -553,7 +656,7 @@ def _structure_parse(blocks: list[dict]) -> list[dict]:
             return
 
         # 3. Dòng mô tả nối tiếp của tiêu chí ngay trước
-        if score is None and current["criteria"] and not is_bullet and not is_major_num and not is_sub_num:
+        if score is None and current["criteria"] and not is_child_item and not is_major_num:
             target = current["criteria"][-1]
             if target.get("children"):
                 target = target["children"][-1]
@@ -732,7 +835,12 @@ def _structure_parse(blocks: list[dict]) -> list[dict]:
             )
             if not new_question:
                 if current["mode"] == "rubric":
-                    add_criterion_line(text, is_list=bool(block.get("is_list")))
+                    add_criterion_line(
+                        text,
+                        is_list=bool(block.get("is_list")),
+                        list_kind=block.get("list_kind"),
+                        list_level=int(block.get("list_level") or 0),
+                    )
                 else:
                     current["answer_lines"].append(text)
                 continue
@@ -783,16 +891,61 @@ def _structure_parse(blocks: list[dict]) -> list[dict]:
         it["code"] = code
         it["content"] = content
         it["sample_answer"] = "\n".join(it["answer_lines"]).strip()
-        # Phẳng hóa tiêu chí phân cấp cha - con: giữ ý con có tiền tố [Tên tiêu chí cha]
-        flattened_criteria = []
-        for c in it["criteria"]:
-            if c.get("children"):
-                flattened_criteria.extend(c["children"])
-            else:
-                flattened_criteria.append(c)
-        it["criteria"] = flattened_criteria
+        # Phẳng hóa tiêu chí phân cấp cha - con (kể cả tự động đối khớp tổng điểm cha = tổng điểm các con)
+        it["criteria"] = _reconcile_parent_child_criteria(it["criteria"])
         cleaned.append(it)
     return cleaned
+
+
+def _reconcile_parent_child_criteria(raw_criteria: list[dict]) -> list[dict]:
+    """Làm phẳng tiêu chí cha - con và tự động phát hiện tiêu chí cha khi tổng điểm các ý con kế tiếp bằng điểm cha."""
+    flattened: list[dict] = []
+    for c in raw_criteria:
+        if c.get("children"):
+            flattened.extend(c["children"])
+        else:
+            flattened.append(dict(c))
+
+    # Nếu tổng điểm đang vượt quá 10đ (VD: 20đ do cộng cả tiêu chí cha lẫn tiêu chí con không đánh số phân cấp),
+    # kiểm tra xem có mục nào mà tổng điểm của >=2 mục ngay sau nó khớp đúng bằng điểm của chính nó không.
+    scored = [c.get("max_score") for c in flattened]
+    total = sum(s for s in scored if s is not None and s > 0)
+    if total <= 10.05 or len(flattened) < 3:
+        return flattened
+
+    reconciled: list[dict] = []
+    i = 0
+    n = len(flattened)
+    while i < n:
+        parent = flattened[i]
+        p_score = parent.get("max_score")
+        if p_score and p_score > 0 and not str(parent.get("name", "")).startswith("["):
+            sub_sum = 0.0
+            j = i + 1
+            matched_end = -1
+            while j < n:
+                s_j = flattened[j].get("max_score")
+                if not s_j or s_j <= 0 or s_j >= p_score:
+                    break
+                sub_sum = round(sub_sum + float(s_j), 2)
+                if abs(sub_sum - float(p_score)) <= 0.05 and (j - i) >= 2:
+                    matched_end = j
+                    break
+                if sub_sum > float(p_score) + 0.05:
+                    break
+                j += 1
+            if matched_end != -1:
+                p_name = parent["name"]
+                for k in range(i + 1, matched_end + 1):
+                    child = dict(flattened[k])
+                    if not str(child.get("name", "")).startswith("["):
+                        child["name"] = f"[{p_name}] {child['name']}"
+                    reconciled.append(child)
+                i = matched_end + 1
+                continue
+        reconciled.append(parent)
+        i += 1
+    return reconciled
 
 
 def _normalize_criteria(raw: list[dict]) -> List[RubricCriterionItem]:
@@ -1090,12 +1243,31 @@ def extract_questions_from_file(
     error_count = 0
     warning_count = 0
 
+    seen_contents: dict[str, str] = {}
+    leaked_header_re = re.compile(
+        r"(?:tiêu\s*chí\s*chấm\s*điểm|thang\s*điểm|biểu\s*điểm|đáp\s*án\s*tham\s*chiếu|hướng\s*dẫn\s*chấm)",
+        re.IGNORECASE,
+    )
+
     for q in questions:
         q.errors = []
         q.warnings = []
 
-        if not q.content.strip():
+        content_clean = q.content.strip()
+        if not content_clean:
             q.errors.append("Thiếu nội dung câu hỏi phát vấn")
+        else:
+            norm_key = re.sub(r"\W+", " ", content_clean.lower()).strip()
+            if norm_key in seen_contents:
+                q.warnings.append(f"Nội dung câu hỏi trùng lặp với câu {seen_contents[norm_key]}")
+            else:
+                seen_contents[norm_key] = q.code
+
+            if leaked_header_re.search(content_clean):
+                q.warnings.append("Nội dung câu hỏi có dấu hiệu lẫn tiêu đề Rubric/Đáp án, vui lòng kiểm tra lại")
+            if len(content_clean) > 650:
+                q.warnings.append("Nội dung câu hỏi dài bất thường (>650 ký tự), có thể đang gộp nhiều câu")
+
         if not q.sample_answer.strip():
             q.errors.append("Thiếu đáp án tham chiếu (AI cần đáp án mẫu để đối chiếu chấm)")
 
