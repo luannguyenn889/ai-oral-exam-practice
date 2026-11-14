@@ -33,17 +33,30 @@ export class CourseSelectionComponent implements OnInit {
   courses: Course[] = [];
   searchQuery = '';
 
-  // Quản lý Modal Thêm mới học phần (dành cho giảng viên)
-  showCreateModal = false;
-  isCreating = false;
-  newCourseCode = '';
-  newCourseName = '';
-  newCourseDescription = '';
-  newCourseSemester = 'Học kỳ 1 - 2026';
-  newCourseDepartment = 'Khoa Công nghệ Thông tin';
+  // Quản lý Modal Thêm mới / Chỉnh sửa học phần (dành cho giảng viên)
+  showCourseModal = false;
+  editingCourse: Course | null = null;
+  isSaving = false;
+  formCourseCode = '';
+  formCourseName = '';
+  formCourseDescription = '';
+  formCourseSemester = 'Học kỳ 1 - 2026';
+  formCourseDepartment = 'Khoa Công nghệ Thông tin';
+
+  // Quản lý Modal Xác nhận xóa học phần
+  deletingCourse: Course | null = null;
+  isDeleting = false;
 
   get isInstructorMode(): boolean {
     return this.router.url.startsWith('/instructor');
+  }
+
+  get previewFolderCode(): string {
+    const cleaned = this.formCourseCode
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_-]/g, '');
+    return cleaned || 'IT4010';
   }
 
   get filteredCourses(): Course[] {
@@ -95,22 +108,34 @@ export class CourseSelectionComponent implements OnInit {
   }
 
   openCreateModal(): void {
-    this.newCourseCode = '';
-    this.newCourseName = '';
-    this.newCourseDescription = '';
-    this.newCourseSemester = 'Học kỳ 1 - 2026';
-    this.newCourseDepartment = 'Khoa Công nghệ Thông tin';
-    this.showCreateModal = true;
+    this.editingCourse = null;
+    this.formCourseCode = '';
+    this.formCourseName = '';
+    this.formCourseDescription = '';
+    this.formCourseSemester = 'Học kỳ 1 - 2026';
+    this.formCourseDepartment = 'Khoa Công nghệ Thông tin';
+    this.showCourseModal = true;
   }
 
-  closeCreateModal(): void {
-    if (this.isCreating) return;
-    this.showCreateModal = false;
+  openEditModal(course: Course): void {
+    this.editingCourse = course;
+    this.formCourseCode = course.code;
+    this.formCourseName = course.name;
+    this.formCourseDescription = course.description || '';
+    this.formCourseSemester = course.semester || 'Học kỳ 1 - 2026';
+    this.formCourseDepartment = course.department || 'Khoa Công nghệ Thông tin';
+    this.showCourseModal = true;
   }
 
-  submitCreateCourse(): void {
-    const code = this.newCourseCode.trim();
-    const name = this.newCourseName.trim();
+  closeCourseModal(): void {
+    if (this.isSaving) return;
+    this.showCourseModal = false;
+    this.editingCourse = null;
+  }
+
+  submitCourseForm(): void {
+    const code = this.formCourseCode.trim();
+    const name = this.formCourseName.trim();
 
     if (!code) {
       this.toastService.warning('Vui lòng nhập mã học phần (ví dụ: IT4010).');
@@ -121,27 +146,73 @@ export class CourseSelectionComponent implements OnInit {
       return;
     }
 
-    this.isCreating = true;
+    this.isSaving = true;
+    const wasEditing = !!this.editingCourse;
+    const targetId = this.editingCourse?.id;
     const payload: Partial<Course> = {
+      id: targetId,
       code: code.toUpperCase(),
       name,
-      description: this.newCourseDescription.trim(),
-      semester: this.newCourseSemester.trim(),
-      department: this.newCourseDepartment.trim(),
+      description: this.formCourseDescription.trim(),
+      semester: this.formCourseSemester.trim(),
+      department: this.formCourseDepartment.trim(),
     };
 
     this.practiceApi.saveCourse(payload).subscribe({
-      next: (created) => {
-        this.isCreating = false;
-        this.showCreateModal = false;
-        this.courses.unshift(created);
-        this.toastService.success(`Thêm mới học phần ${created.code} thành công!`);
+      next: (saved) => {
+        this.isSaving = false;
+        this.showCourseModal = false;
+        this.editingCourse = null;
+        if (wasEditing && targetId) {
+          this.courses = this.courses.map((c) => (c.id === targetId ? saved : c));
+          this.toastService.success(
+            `Cập nhật học phần ${saved.code} thành công! Thư mục lưu trữ: ${saved.code}.`,
+          );
+        } else {
+          this.courses = [saved, ...this.courses];
+          this.toastService.success(
+            `Thêm mới học phần ${saved.code} thành công! Đã tạo thư mục lưu trữ ${saved.code}.`,
+          );
+        }
       },
       error: (err) => {
-        this.isCreating = false;
+        this.isSaving = false;
         const msg =
           err?.error?.message ||
-          'Không thể thêm học phần. Vui lòng kiểm tra xem mã môn học có bị trùng không.';
+          err?.message ||
+          'Không thể lưu học phần. Vui lòng kiểm tra xem mã môn học có bị trùng không.';
+        this.toastService.error(msg);
+      },
+    });
+  }
+
+  openDeleteModal(course: Course): void {
+    this.deletingCourse = course;
+  }
+
+  closeDeleteModal(): void {
+    if (this.isDeleting) return;
+    this.deletingCourse = null;
+  }
+
+  confirmDeleteCourse(): void {
+    if (!this.deletingCourse || this.isDeleting) return;
+    const target = this.deletingCourse;
+    this.isDeleting = true;
+
+    this.practiceApi.deleteCourse(target.id).subscribe({
+      next: () => {
+        this.isDeleting = false;
+        this.deletingCourse = null;
+        this.courses = this.courses.filter((c) => c.id !== target.id);
+        this.toastService.success(`Đã xóa học phần ${target.code} và kho tài liệu liên quan.`);
+      },
+      error: (err) => {
+        this.isDeleting = false;
+        const msg =
+          err?.error?.message ||
+          err?.message ||
+          'Không thể xóa học phần. Vui lòng kiểm tra kết nối máy chủ.';
         this.toastService.error(msg);
       },
     });

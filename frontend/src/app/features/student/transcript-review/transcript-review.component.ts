@@ -35,7 +35,7 @@ export class TranscriptReviewComponent implements OnInit {
   grading = false;
 
   ngOnInit(): void {
-    this.sessionId = this.route.snapshot.paramMap.get('sessionId') || 'session-demo-1';
+    this.sessionId = this.route.snapshot.paramMap.get('sessionId') || '';
     this.loadSession();
   }
 

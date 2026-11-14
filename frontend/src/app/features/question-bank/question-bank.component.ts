@@ -1,6 +1,8 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { combineLatest } from 'rxjs';
 import { PracticeApi } from '../../data-access/api/practice.api';
 import { Course, Question } from '../../shared/models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -12,6 +14,7 @@ import { ErrorStateComponent } from '../../shared/components/error-state/error-s
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     SkeletonComponent,
     EmptyStateComponent,
@@ -26,6 +29,7 @@ export class QuestionBankComponent implements OnInit {
   private practiceApi = inject(PracticeApi);
 
   courseId?: string;
+  courses: Course[] = [];
   course: Course | null = null;
   loading = true;
   error: string | null = null;
@@ -66,11 +70,32 @@ export class QuestionBankComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.courseId =
-      this.route.snapshot.paramMap.get('courseId') ||
-      this.route.snapshot.queryParamMap.get('courseId') ||
-      undefined;
-    this.loadData();
+    combineLatest([this.route.paramMap, this.route.queryParamMap]).subscribe(
+      ([params, queryParams]) => {
+        this.courseId = params.get('courseId') || queryParams.get('courseId') || undefined;
+        this.selectedTopic = 'Tất cả';
+        this.loadData();
+      },
+    );
+  }
+
+  onCourseFilterChange(selectedCourseId: string): void {
+    this.selectedTopic = 'Tất cả';
+    if (selectedCourseId) {
+      this.router.navigate(['/instructor/questions'], {
+        queryParams: { courseId: selectedCourseId },
+      });
+    } else {
+      this.router.navigate(['/instructor/questions']);
+    }
+  }
+
+  getCourseBadge(courseId?: string): string {
+    if (!courseId) return '';
+    const found = this.courses.find(
+      (c) => c.id === courseId || c.code.toLowerCase() === courseId.toLowerCase(),
+    );
+    return found ? found.code : '';
   }
 
   loadData(): void {
@@ -79,10 +104,16 @@ export class QuestionBankComponent implements OnInit {
 
     this.practiceApi.getCourses().subscribe({
       next: (courses) => {
+        this.courses = courses || [];
         if (this.courseId) {
-          this.course = courses.find((c) => c.id === this.courseId) || null;
-        } else if (courses.length > 0 && this.isInstructorMode) {
-          this.course = courses[0];
+          this.course =
+            this.courses.find(
+              (c) =>
+                c.id === this.courseId ||
+                c.code.toLowerCase() === this.courseId!.toLowerCase(),
+            ) || null;
+        } else {
+          this.course = null;
         }
       },
     });

@@ -39,7 +39,7 @@ export class PracticeRecorderComponent implements OnInit, OnDestroy {
   submitting = false;
 
   ngOnInit(): void {
-    this.questionId = this.route.snapshot.paramMap.get('questionId') || 'q-se-1';
+    this.questionId = this.route.snapshot.paramMap.get('questionId') || '';
     this.loadQuestion();
   }
 

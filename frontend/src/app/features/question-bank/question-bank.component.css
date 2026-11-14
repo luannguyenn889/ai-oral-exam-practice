@@ -15,6 +15,27 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.course-switcher-select {
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-family-base);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 340px;
+}
+
+.course-switcher-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .page-header__back-link {
@@ -220,6 +241,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .question-card__topic {

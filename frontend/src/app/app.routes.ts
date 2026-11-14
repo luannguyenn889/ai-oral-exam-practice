@@ -106,6 +106,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'documents',
+        loadComponent: () =>
+          import('./features/instructor/course-documents/course-documents.component').then(
+            (m) => m.CourseDocumentsComponent,
+          ),
+      },
+      {
         path: 'courses/:courseId/documents',
         loadComponent: () =>
           import('./features/instructor/course-documents/course-documents.component').then(

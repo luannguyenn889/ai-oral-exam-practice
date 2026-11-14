@@ -13,12 +13,24 @@
         <span class="page-header__badge">{{ course.code }}</span>
       }
       @if (isInstructorMode) {
+        <select
+          class="course-switcher-select"
+          [ngModel]="course?.id || courseId || ''"
+          (ngModelChange)="onCourseFilterChange($event)"
+          aria-label="Lọc câu hỏi theo học phần"
+        >
+          <option value="">Tất cả học phần ({{ courses.length }} môn)</option>
+          @for (c of courses; track c.id) {
+            <option [value]="c.id">{{ c.code }} — {{ c.name }} ({{ c.questionCount }} câu)</option>
+          }
+        </select>
+
         <a
-          [routerLink]="['/instructor/courses', course?.id || 'IT2030', 'documents']"
+          [routerLink]="course ? ['/instructor/courses', course.code, 'documents'] : ['/instructor/documents']"
           class="btn btn--secondary btn--sm"
         >
           <span class="material-symbols-outlined">menu_book</span>
-          Quản lý Giáo trình RAG ({{ course?.code || 'IT2030' }})
+          {{ course ? 'Quản lý Giáo trình RAG (' + course.code + ')' : 'Quản lý Giáo trình RAG' }}
         </a>
         <a
           [routerLink]="['/instructor/questions/import']"
@@ -40,14 +52,22 @@
     </div>
 
     <h1 class="page-header__title">
-      {{ course ? course.name : 'Ngân hàng câu hỏi ôn tập' }}
+      {{
+        course
+          ? course.name
+          : isInstructorMode
+            ? 'Ngân hàng câu hỏi (Tất cả học phần)'
+            : 'Ngân hàng câu hỏi ôn tập'
+      }}
     </h1>
 
     <p class="page-header__subtitle">
       {{
         course
           ? course.description
-          : 'Chọn câu hỏi bạn muốn luyện tập để bắt đầu phần thi vấn đáp trực tiếp với trợ lý ảo AI.'
+          : isInstructorMode
+            ? 'Hiển thị toàn bộ câu hỏi trong hệ thống. Chọn một học phần ở thanh điều hướng phía trên để lọc nhanh theo môn.'
+            : 'Chọn câu hỏi bạn muốn luyện tập để bắt đầu phần thi vấn đáp trực tiếp với trợ lý ảo AI.'
       }}
     </p>
   </header>
@@ -152,7 +172,9 @@
       [description]="
         searchQuery || selectedDifficulty !== 'all' || selectedTopic !== 'Tất cả'
           ? 'Không có câu hỏi nào khớp với bộ lọc hiện tại. Vui lòng thử tìm kiếm lại.'
-          : 'Học phần này hiện chưa được giảng viên cập nhật nội dung câu hỏi ôn tập.'
+          : course
+            ? 'Học phần này hiện chưa được giảng viên cập nhật nội dung câu hỏi ôn tập.'
+            : 'Hiện tại chưa có câu hỏi nào trong hệ thống.'
       "
       [actionLabel]="
         searchQuery || selectedDifficulty !== 'all' || selectedTopic !== 'Tất cả'
@@ -167,6 +189,9 @@
         <div class="question-card">
           <div class="question-card__header">
             <div class="question-card__meta-left">
+              @if (!course && getCourseBadge(q.courseId)) {
+                <span class="page-header__badge">{{ getCourseBadge(q.courseId) }}</span>
+              }
               @if (q.topic) {
                 <span class="question-card__topic">{{ q.topic }}</span>
               }

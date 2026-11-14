@@ -94,6 +94,10 @@ export class HttpPracticeApi extends PracticeApi {
     return this.http.post<Course>(`${this.baseUrl}/courses`, course);
   }
 
+  override deleteCourse(courseId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/courses/${courseId}`);
+  }
+
   override saveQuestion(question: Partial<Question>): Observable<Question> {
     if (question.id) {
       return this.http.put<Question>(`${this.baseUrl}/questions/${question.id}`, question);

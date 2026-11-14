@@ -1,11 +1,15 @@
 package vn.oralexam.backend.controller;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,13 +58,14 @@ public class CourseController {
      */
     @PutMapping("/{id}")
     public CourseResponse updateCourse(
-            @PathVariable UUID id,
+            @PathVariable String id,
             @Valid @RequestBody SaveCourseRequest request,
             Authentication authentication
     ) {
         UUID userId = extractUserId(authentication);
+        UUID resolvedId = questionService.resolveCourse(id).getId();
         SaveCourseRequest syncedRequest = new SaveCourseRequest(
-                id,
+                resolvedId,
                 request.code(),
                 request.name(),
                 request.description(),
@@ -68,6 +73,20 @@ public class CourseController {
                 request.department()
         );
         return questionService.saveCourse(syncedRequest, userId);
+    }
+
+    /**
+     * Xóa mềm học phần, giải phóng mã học phần và dọn thư mục tài liệu RAG
+     */
+    @DeleteMapping("/{id}")
+    public Map<String, Object> deleteCourse(@PathVariable String id) {
+        questionService.deleteCourse(id);
+        return Map.of("success", true, "message", "Đã xóa học phần thành công.");
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Yêu cầu không hợp lệ."));
     }
 
     private UUID extractUserId(Authentication authentication) {

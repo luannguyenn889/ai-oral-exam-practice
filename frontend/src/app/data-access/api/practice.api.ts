@@ -25,6 +25,7 @@ export abstract class PracticeApi {
   abstract getEvaluation(sessionId: string): Observable<Evaluation>;
   abstract getPracticeHistory(userId?: string): Observable<PracticeSession[]>;
   abstract saveCourse(course: Partial<Course>): Observable<Course>;
+  abstract deleteCourse(courseId: string): Observable<void>;
   abstract saveQuestion(question: Partial<Question>): Observable<Question>;
   abstract saveRubric(questionId: string, rubric: Rubric): Observable<Rubric>;
   abstract extractQuestionsFromFile(

@@ -177,6 +177,41 @@ export class AiRagService {
     );
   }
 
+  getServerDocumentUrl(courseId: string, filename: string): string {
+    return `${this.aiUrl}/ai/rag/documents/${encodeURIComponent(courseId)}/${encodeURIComponent(filename)}`;
+  }
+
+  previewCourseDocument(
+    courseId: string,
+    filename: string,
+  ): Observable<{
+    courseId: string;
+    filename: string;
+    sizeBytes: number;
+    totalChars: number;
+    content: string;
+  }> {
+    return this.http
+      .get<{
+        course_id: string;
+        filename: string;
+        size_bytes: number;
+        total_chars: number;
+        content: string;
+      }>(
+        `${this.aiUrl}/ai/rag/documents/${encodeURIComponent(courseId)}/${encodeURIComponent(filename)}/preview`,
+      )
+      .pipe(
+        map((res) => ({
+          courseId: res.course_id,
+          filename: res.filename,
+          sizeBytes: res.size_bytes,
+          totalChars: res.total_chars,
+          content: res.content,
+        })),
+      );
+  }
+
   deleteCourseDocument(
     courseId: string,
     filename: string,
@@ -198,6 +233,49 @@ export class AiRagService {
           totalChunks: res.total_chunks,
         })),
       );
+  }
+
+  syncCourseFolder(
+    courseCode: string,
+    oldCode?: string,
+    legacyId?: string,
+  ): Observable<{
+    course_code: string;
+    folder_path: string;
+    migrated_files: number;
+    status: string;
+  }> {
+    return this.http.post<{
+      course_code: string;
+      folder_path: string;
+      migrated_files: number;
+      status: string;
+    }>(`${this.aiUrl}/ai/rag/courses/sync-folder`, {
+      course_code: courseCode,
+      old_code: oldCode || null,
+      legacy_id: legacyId || null,
+    });
+  }
+
+  deleteCourseFolder(
+    courseCode: string,
+    legacyId?: string,
+  ): Observable<{
+    course_code: string;
+    deleted_dirs: number;
+    removed_chunks: number;
+    status: string;
+  }> {
+    const params: Record<string, string> = {};
+    if (legacyId) {
+      params['legacy_id'] = legacyId;
+    }
+    return this.http.delete<{
+      course_code: string;
+      deleted_dirs: number;
+      removed_chunks: number;
+      status: string;
+    }>(`${this.aiUrl}/ai/rag/courses/${encodeURIComponent(courseCode)}`, { params });
   }
 
   searchCourseDocuments(params: {

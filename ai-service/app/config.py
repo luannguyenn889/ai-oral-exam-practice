@@ -54,9 +54,12 @@ class Settings(BaseSettings):
         p = Path(self.chroma_db_dir)
         return p if p.is_absolute() else (BASE_DIR / p).resolve()
 
-    def course_documents_dir(self, course_id: str) -> Path:
+    def resolve_course_documents_dir(self, course_id: str) -> Path:
         safe_course = "".join(c for c in (course_id or "default").strip() if c.isalnum() or c in ("-", "_")) or "default"
-        path = self.resolved_documents_dir / safe_course
+        return self.resolved_documents_dir / safe_course
+
+    def course_documents_dir(self, course_id: str) -> Path:
+        path = self.resolve_course_documents_dir(course_id)
         path.mkdir(parents=True, exist_ok=True)
         return path
 

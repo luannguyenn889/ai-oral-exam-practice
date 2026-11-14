@@ -3,6 +3,13 @@ package vn.oralexam.backend.service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +35,7 @@ import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.oralexam.backend.DTO.request.BatchImportCommitRequest;
@@ -59,6 +67,12 @@ public class QuestionService {
     private final QuestionVersionRepository questionVersionRepository;
     private final RubricVersionRepository rubricVersionRepository;
     private final UserRepository userRepository;
+    private final HttpClient aiHttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(2))
+            .build();
+
+    @Value("${app.ai-service.base-url:http://localhost:8000}")
+    private String aiServiceBaseUrl = "http://localhost:8000";
 
     public QuestionService(
             CourseRepository courseRepository,
@@ -118,42 +132,11 @@ public class QuestionService {
     }
 
     /**
-     * Tự động khởi tạo dữ liệu mẫu cho Course và Instructor nếu database trống
+     * Đảm bảo tài khoản giảng viên mặc định tồn tại trong hệ thống khi khởi động.
      */
     @PostConstruct
     public void seedInitialDataIfEmpty() {
-        UUID instructorId = resolveUserId(null);
-
-        if (courseRepository.count() == 0) {
-            Course c1 = new Course(
-                    "IT2030",
-                    "Công nghệ Phần mềm (Software Engineering)",
-                    "Môn học cốt lõi ngành CNTT về quy trình phát triển phần mềm, kiến trúc mẫu và kiểm thử.",
-                    "Học kỳ 1 - 2026",
-                    "Khoa Công nghệ Thông tin"
-            );
-            c1.setCreatedBy(instructorId);
-
-            Course c2 = new Course(
-                    "IT3020",
-                    "Hệ Quản trị Cơ sở Dữ liệu (DBMS)",
-                    "Nguyên lý cơ sở dữ liệu quan hệ, giao dịch ACID, tối ưu hóa truy vấn SQL và lập chỉ mục.",
-                    "Học kỳ 1 - 2026",
-                    "Khoa Công nghệ Thông tin"
-            );
-            c2.setCreatedBy(instructorId);
-
-            Course c3 = new Course(
-                    "IT3080",
-                    "Mạng Máy tính & An toàn Mạng",
-                    "Giao thức mạng mô hình OSI/TCP-IP, định tuyến, bảo mật SSL/TLS và phòng chống tấn công mạng.",
-                    "Học kỳ 1 - 2026",
-                    "Khoa Công nghệ Thông tin"
-            );
-            c3.setCreatedBy(instructorId);
-
-            courseRepository.saveAll(List.of(c1, c2, c3));
-        }
+        resolveUserId(null);
     }
 
     @Transactional(readOnly = true)
@@ -196,20 +179,33 @@ public class QuestionService {
 
     public CourseResponse saveCourse(SaveCourseRequest request, UUID userId) {
         UUID creatorId = resolveUserId(userId);
+        String normalizedCode = request.code().trim().toUpperCase();
         Course course;
+        String oldCode = null;
+
+        Optional<Course> conflictOpt = courseRepository.findByCodeIgnoreCase(normalizedCode);
+        if (conflictOpt.isPresent()) {
+            Course conflict = conflictOpt.get();
+            boolean isDifferentCourse = request.id() == null || !conflict.getId().equals(request.id());
+            if (isDifferentCourse) {
+                if (conflict.isActive()) {
+                    throw new IllegalArgumentException("Mã học phần '" + normalizedCode + "' đã tồn tại trong hệ thống.");
+                }
+                conflict.setCode(conflict.getCode() + "_DEL_" + conflict.getId().toString().substring(0, 8));
+                courseRepository.saveAndFlush(conflict);
+            }
+        }
+
         if (request.id() != null) {
             course = courseRepository.findById(request.id())
                     .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy học phần: " + request.id()));
+            oldCode = course.getCode();
         } else {
-            Optional<Course> existing = courseRepository.findByCodeIgnoreCase(request.code().trim());
-            if (existing.isPresent()) {
-                throw new IllegalArgumentException("Mã học phần '" + request.code().trim() + "' đã tồn tại trong hệ thống.");
-            }
             course = new Course();
             course.setCreatedBy(creatorId);
         }
 
-        course.setCode(request.code().trim().toUpperCase());
+        course.setCode(normalizedCode);
         course.setName(request.name().trim());
         course.setDescription(request.description() != null ? request.description().trim() : "");
         course.setSemester(request.semester() != null && !request.semester().isBlank() ? request.semester().trim() : "Học kỳ 1 - 2026");
@@ -220,7 +216,18 @@ public class QuestionService {
         }
 
         course = courseRepository.save(course);
-        String instructorName = userRepository.findById(creatorId).map(User::getFullName).orElse("TS. Nguyễn Luân (Khoa CNTT - ĐH Quy Nhơn)");
+        syncAiCourseFolder(course.getCode(), oldCode, course.getId().toString());
+
+        List<Question> courseQuestions = questionRepository.findByCourseIdAndActiveTrue(course.getId());
+        List<String> topics = courseQuestions.stream()
+                .map(Question::getTopic)
+                .filter(t -> t != null && !t.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+
+        UUID ownerId = course.getCreatedBy() != null ? course.getCreatedBy() : creatorId;
+        String instructorName = userRepository.findById(ownerId).map(User::getFullName)
+                .orElse("TS. Nguyễn Luân (Khoa CNTT - ĐH Quy Nhơn)");
 
         return new CourseResponse(
                 course.getId(),
@@ -229,11 +236,80 @@ public class QuestionService {
                 course.getDescription(),
                 course.getSemester(),
                 course.getDepartment(),
-                0,
-                List.of(),
+                courseQuestions.size(),
+                topics,
                 course.getCreatedBy(),
                 instructorName
         );
+    }
+
+    public void deleteCourse(String courseIdentifier) {
+        Course course = resolveCourse(courseIdentifier);
+        String originalCode = course.getCode();
+        String courseUuid = course.getId().toString();
+
+        List<Question> questions = questionRepository.findByCourseIdAndActiveTrue(course.getId());
+        for (Question q : questions) {
+            q.setActive(false);
+        }
+        if (!questions.isEmpty()) {
+            questionRepository.saveAll(questions);
+        }
+
+        course.setActive(false);
+        if (!originalCode.contains("_DEL_")) {
+            course.setCode(originalCode + "_DEL_" + courseUuid.substring(0, 8));
+        }
+        courseRepository.save(course);
+
+        deleteAiCourseFolder(originalCode, courseUuid);
+    }
+
+    private void syncAiCourseFolder(String courseCode, String oldCode, String legacyId) {
+        try {
+            String base = (aiServiceBaseUrl != null ? aiServiceBaseUrl : "http://localhost:8000").replaceAll("/$", "");
+            StringBuilder json = new StringBuilder("{");
+            json.append("\"course_code\":\"").append(escapeJson(courseCode)).append("\"");
+            if (oldCode != null && !oldCode.isBlank()) {
+                json.append(",\"old_code\":\"").append(escapeJson(oldCode)).append("\"");
+            }
+            if (legacyId != null && !legacyId.isBlank()) {
+                json.append(",\"legacy_id\":\"").append(escapeJson(legacyId)).append("\"");
+            }
+            json.append("}");
+
+            HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/ai/rag/courses/sync-folder"))
+                    .timeout(Duration.ofSeconds(3))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json.toString(), StandardCharsets.UTF_8))
+                    .build();
+            aiHttpClient.send(request, HttpResponse.BodyHandlers.discarding());
+        } catch (Exception ignored) {
+            // Không chặn thao tác DB nếu AI Service tạm thời chưa khởi động
+        }
+    }
+
+    private void deleteAiCourseFolder(String courseCode, String legacyId) {
+        try {
+            String base = (aiServiceBaseUrl != null ? aiServiceBaseUrl : "http://localhost:8000").replaceAll("/$", "");
+            String encodedCode = URLEncoder.encode(courseCode, StandardCharsets.UTF_8).replace("+", "%20");
+            String url = base + "/ai/rag/courses/" + encodedCode;
+            if (legacyId != null && !legacyId.isBlank()) {
+                String encodedLegacy = URLEncoder.encode(legacyId, StandardCharsets.UTF_8);
+                url += "?legacy_id=" + encodedLegacy;
+            }
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(3))
+                    .DELETE()
+                    .build();
+            aiHttpClient.send(request, HttpResponse.BodyHandlers.discarding());
+        } catch (Exception ignored) {
+            // Không chặn thao tác DB nếu AI Service tạm thời chưa khởi động
+        }
+    }
+
+    private static String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     @Transactional(readOnly = true)

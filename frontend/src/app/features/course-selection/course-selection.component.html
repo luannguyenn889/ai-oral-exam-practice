@@ -79,13 +79,39 @@
         <div class="course-card">
           <div>
             <div class="course-card__header">
-              <span class="course-card__code">{{ course.code }}</span>
-              @if (course.instructorName) {
-                <span class="course-card__instructor">
-                  <span class="material-symbols-outlined">person</span>
-                  {{ course.instructorName }}
-                </span>
-              }
+              <div class="course-card__header-left">
+                <span class="course-card__code">{{ course.code }}</span>
+              </div>
+              <div class="course-card__header-right">
+                @if (course.instructorName) {
+                  <span class="course-card__instructor" [title]="course.instructorName">
+                    <span class="material-symbols-outlined">person</span>
+                    <span class="course-card__instructor-text">{{ course.instructorName }}</span>
+                  </span>
+                }
+                @if (isInstructorMode) {
+                  <div class="course-card__manage">
+                    <button
+                      type="button"
+                      class="icon-action-btn icon-action-btn--edit"
+                      (click)="openEditModal(course)"
+                      title="Sửa thông tin học phần"
+                      aria-label="Sửa học phần"
+                    >
+                      <span class="material-symbols-outlined">edit</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon-action-btn icon-action-btn--delete"
+                      (click)="openDeleteModal(course)"
+                      title="Xóa học phần"
+                      aria-label="Xóa học phần"
+                    >
+                      <span class="material-symbols-outlined">delete</span>
+                    </button>
+                  </div>
+                }
+              </div>
             </div>
 
             <h2 class="course-card__title">{{ course.name }}</h2>
@@ -109,7 +135,7 @@
             @if (isInstructorMode) {
               <div class="course-card__actions">
                 <a
-                  [routerLink]="['/instructor/courses', course.id, 'documents']"
+                  [routerLink]="['/instructor/courses', course.code, 'documents']"
                   class="btn btn--secondary btn--sm"
                 >
                   <span class="material-symbols-outlined">menu_book</span>
@@ -139,91 +165,102 @@
     </div>
   }
 
-  <!-- Modal Thêm mới học phần (Giảng viên) -->
-  @if (showCreateModal) {
-    <div class="modal-backdrop" (click)="closeCreateModal()">
+  <!-- Modal Thêm mới / Chỉnh sửa học phần (Giảng viên) -->
+  @if (showCourseModal) {
+    <div class="modal-backdrop" (click)="closeCourseModal()">
       <div class="modal-dialog" (click)="$event.stopPropagation()">
         <header class="modal-header">
           <div class="modal-header__title-group">
-            <span class="material-symbols-outlined modal-icon">library_add</span>
+            <span class="material-symbols-outlined modal-icon">
+              {{ editingCourse ? 'edit_square' : 'library_add' }}
+            </span>
             <div>
-              <h2 class="modal-title">Thêm mới học phần ôn thi</h2>
+              <h2 class="modal-title">
+                {{ editingCourse ? 'Chỉnh sửa học phần ' + editingCourse.code : 'Thêm mới học phần ôn thi' }}
+              </h2>
               <p class="modal-subtitle">
-                Tạo học phần mới để chuẩn bị nạp tài liệu giáo trình RAG và soạn thảo câu hỏi vấn đáp.
+                {{
+                  editingCourse
+                    ? 'Cập nhật thông tin học phần. Nếu đổi mã học phần, thư mục giáo trình RAG sẽ tự động đổi tên theo mã mới.'
+                    : 'Tạo học phần mới và khởi tạo thư mục lưu trữ giáo trình RAG theo đúng mã học phần.'
+                }}
               </p>
             </div>
           </div>
-          <button type="button" class="close-btn" (click)="closeCreateModal()" aria-label="Đóng">
+          <button type="button" class="close-btn" (click)="closeCourseModal()" aria-label="Đóng">
             <span class="material-symbols-outlined">close</span>
           </button>
         </header>
 
-        <form (ngSubmit)="submitCreateCourse()" class="modal-form">
+        <form (ngSubmit)="submitCourseForm()" class="modal-form">
           <div class="form-grid">
             <div class="form-group">
-              <label for="new-code" class="form-label">
+              <label for="course-code" class="form-label">
                 Mã học phần <span class="required">*</span>
               </label>
               <input
-                id="new-code"
+                id="course-code"
                 type="text"
                 class="form-input"
                 placeholder="VD: IT4010, IT2030..."
-                [(ngModel)]="newCourseCode"
-                name="newCourseCode"
+                [(ngModel)]="formCourseCode"
+                name="formCourseCode"
                 required
               />
+              <span class="form-hint">
+                Thư mục lưu tài liệu: <code>data/documents/{{ previewFolderCode }}</code>
+              </span>
             </div>
 
             <div class="form-group">
-              <label for="new-semester" class="form-label">Học kỳ</label>
+              <label for="course-semester" class="form-label">Học kỳ</label>
               <input
-                id="new-semester"
+                id="course-semester"
                 type="text"
                 class="form-input"
                 placeholder="VD: Học kỳ 1 - 2026"
-                [(ngModel)]="newCourseSemester"
-                name="newCourseSemester"
+                [(ngModel)]="formCourseSemester"
+                name="formCourseSemester"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label for="new-name" class="form-label">
+            <label for="course-name" class="form-label">
               Tên học phần / môn học <span class="required">*</span>
             </label>
             <input
-              id="new-name"
+              id="course-name"
               type="text"
               class="form-input"
               placeholder="VD: Trí tuệ Nhân tạo & Học máy nâng cao"
-              [(ngModel)]="newCourseName"
-              name="newCourseName"
+              [(ngModel)]="formCourseName"
+              name="formCourseName"
               required
             />
           </div>
 
           <div class="form-group">
-            <label for="new-department" class="form-label">Khoa / Bộ môn phụ trách</label>
+            <label for="course-department" class="form-label">Khoa / Bộ môn phụ trách</label>
             <input
-              id="new-department"
+              id="course-department"
               type="text"
               class="form-input"
               placeholder="VD: Khoa Công nghệ Thông tin"
-              [(ngModel)]="newCourseDepartment"
-              name="newCourseDepartment"
+              [(ngModel)]="formCourseDepartment"
+              name="formCourseDepartment"
             />
           </div>
 
           <div class="form-group">
-            <label for="new-desc" class="form-label">Mô tả tóm tắt học phần</label>
+            <label for="course-desc" class="form-label">Mô tả tóm tắt học phần</label>
             <textarea
-              id="new-desc"
+              id="course-desc"
               rows="3"
               class="form-textarea"
               placeholder="Mô tả nội dung chương trình học, mục tiêu đầu ra và phạm vi kiểm tra vấn đáp..."
-              [(ngModel)]="newCourseDescription"
-              name="newCourseDescription"
+              [(ngModel)]="formCourseDescription"
+              name="formCourseDescription"
             ></textarea>
           </div>
 
@@ -231,26 +268,84 @@
             <button
               type="button"
               class="btn btn--ghost"
-              [disabled]="isCreating"
-              (click)="closeCreateModal()"
+              [disabled]="isSaving"
+              (click)="closeCourseModal()"
             >
               Hủy bỏ
             </button>
             <button
               type="submit"
               class="btn btn--primary"
-              [disabled]="isCreating"
+              [disabled]="isSaving"
             >
-              @if (isCreating) {
+              @if (isSaving) {
                 <span class="material-symbols-outlined spin">progress_activity</span>
-                <span>Đang tạo...</span>
+                <span>{{ editingCourse ? 'Đang lưu...' : 'Đang tạo...' }}</span>
               } @else {
                 <span class="material-symbols-outlined">check</span>
-                <span>Tạo học phần</span>
+                <span>{{ editingCourse ? 'Lưu thay đổi' : 'Tạo học phần' }}</span>
               }
             </button>
           </footer>
         </form>
+      </div>
+    </div>
+  }
+
+  <!-- Modal Xác nhận xóa học phần (Giảng viên) -->
+  @if (deletingCourse) {
+    <div class="modal-backdrop" (click)="closeDeleteModal()">
+      <div class="modal-dialog modal-dialog--sm" (click)="$event.stopPropagation()">
+        <header class="modal-header">
+          <div class="modal-header__title-group">
+            <span class="material-symbols-outlined modal-icon modal-icon--danger">warning</span>
+            <div>
+              <h2 class="modal-title">Xác nhận xóa học phần</h2>
+              <p class="modal-subtitle">
+                Thao tác này sẽ ẩn học phần và dọn sạch kho tài liệu RAG tương ứng.
+              </p>
+            </div>
+          </div>
+          <button type="button" class="close-btn" (click)="closeDeleteModal()" aria-label="Đóng">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </header>
+
+        <div class="modal-body">
+          <p class="confirm-text">
+            Bạn có chắc chắn muốn xóa học phần
+            <strong>{{ deletingCourse.code }} — {{ deletingCourse.name }}</strong>?
+          </p>
+          <p class="confirm-subtext">
+            Hệ thống sẽ xóa {{ deletingCourse.questionCount }} câu hỏi thuộc học phần này và xóa thư
+            mục tài liệu giáo trình <code>data/documents/{{ deletingCourse.code }}</code> trên Server.
+          </p>
+        </div>
+
+        <footer class="modal-footer modal-footer--padded">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            [disabled]="isDeleting"
+            (click)="closeDeleteModal()"
+          >
+            Hủy bỏ
+          </button>
+          <button
+            type="button"
+            class="btn btn--danger"
+            [disabled]="isDeleting"
+            (click)="confirmDeleteCourse()"
+          >
+            @if (isDeleting) {
+              <span class="material-symbols-outlined spin">progress_activity</span>
+              <span>Đang xóa...</span>
+            } @else {
+              <span class="material-symbols-outlined">delete_forever</span>
+              <span>Xác nhận xóa</span>
+            }
+          </button>
+        </footer>
       </div>
     </div>
   }

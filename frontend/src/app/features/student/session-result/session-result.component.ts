@@ -27,7 +27,7 @@ export class SessionResultComponent implements OnInit, OnDestroy {
   isSpeaking = false;
 
   ngOnInit(): void {
-    this.sessionId = this.route.snapshot.paramMap.get('sessionId') || 'session-demo-1';
+    this.sessionId = this.route.snapshot.paramMap.get('sessionId') || '';
     this.loadResult();
   }
 
