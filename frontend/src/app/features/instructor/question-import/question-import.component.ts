@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../../data-access/api/practice.api';
 import { Course, ExtractedQuestion, QuestionExtractResult } from '../../../shared/models';
 import { ToastService } from '../../../core/services/toast.service';
+import { AuthService } from '../../../core/auth/auth.service';
+import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
 
 @Component({
   selector: 'app-question-import',
@@ -18,6 +20,7 @@ export class QuestionImportComponent implements OnInit {
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
   private toastService = inject(ToastService);
+  private authService = inject(AuthService);
 
   courses: Course[] = [];
   selectedCourseId = '';
@@ -37,6 +40,9 @@ export class QuestionImportComponent implements OnInit {
 
   // Toggle mở chi tiết Rubric cho từng câu hỏi
   expandedRubrics = new Set<string>();
+
+  // Toggle thu gọn / mở rộng thẻ câu hỏi
+  collapsedCards = new Set<string>();
 
   get filteredQuestions(): ExtractedQuestion[] {
     if (this.filterMode === 'issues') {
@@ -77,7 +83,8 @@ export class QuestionImportComponent implements OnInit {
   }
 
   loadCourses(): void {
-    this.practiceApi.getCourses().subscribe({
+    const isAdmin = this.authService.getRole() === 'admin';
+    this.practiceApi.getCourses(!isAdmin).subscribe({
       next: (courses) => {
         this.courses = courses;
         if (!this.selectedCourseId && courses.length > 0) {
@@ -137,7 +144,17 @@ export class QuestionImportComponent implements OnInit {
       next: (result) => {
         this.isAnalyzing = false;
         this.extractResult = result;
-        this.questions = result.questions.map((q) => ({ ...q }));
+        this.questions = result.questions.map((q) => ({
+          ...q,
+          title: cleanHtmlToPlainText(q.title),
+          content: cleanHtmlToPlainText(q.content),
+          sampleAnswer: cleanHtmlToPlainText(q.sampleAnswer),
+          criteria: (q.criteria || []).map((c) => ({
+            ...c,
+            name: cleanHtmlToPlainText(c.name),
+            description: cleanHtmlToPlainText(c.description),
+          })),
+        }));
         this.validateAllQuestions();
         this.toastService.success(
           `AI đã phân tích xong! Phát hiện ${result.totalDetected} câu hỏi và thang điểm Rubric.`,
@@ -205,6 +222,37 @@ export class QuestionImportComponent implements OnInit {
     return this.expandedRubrics.has(tempId);
   }
 
+  toggleCardCollapse(tempId: string): void {
+    if (this.collapsedCards.has(tempId)) {
+      this.collapsedCards.delete(tempId);
+    } else {
+      this.collapsedCards.add(tempId);
+    }
+  }
+
+  isCardCollapsed(tempId: string): boolean {
+    return this.collapsedCards.has(tempId);
+  }
+
+  get areAllCollapsed(): boolean {
+    return (
+      this.filteredQuestions.length > 0 &&
+      this.filteredQuestions.every((q) => this.collapsedCards.has(q.tempId))
+    );
+  }
+
+  toggleAllCards(): void {
+    if (this.areAllCollapsed) {
+      for (const q of this.filteredQuestions) {
+        this.collapsedCards.delete(q.tempId);
+      }
+    } else {
+      for (const q of this.filteredQuestions) {
+        this.collapsedCards.add(q.tempId);
+      }
+    }
+  }
+
   balanceRubricTo10(question: ExtractedQuestion): void {
     if (question.criteria.length === 0) return;
     const diff = Math.round((10.0 - question.totalScore) * 10) / 10;
@@ -217,6 +265,13 @@ export class QuestionImportComponent implements OnInit {
 
   removeQuestion(index: number): void {
     this.questions.splice(index, 1);
+    this.validateAllQuestions();
+  }
+
+  removeQuestionById(tempId: string): void {
+    this.questions = this.questions.filter((q) => q.tempId !== tempId);
+    this.collapsedCards.delete(tempId);
+    this.expandedRubrics.delete(tempId);
     this.validateAllQuestions();
   }
 

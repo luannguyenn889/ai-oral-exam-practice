@@ -7,10 +7,21 @@
 
   @if (authService.currentUser$ | async; as user) {
     <div class="app-header__account">
-      <div class="app-header__identity">
-        <span class="app-header__name">{{ user.name }}</span>
-        <span class="app-header__email">{{ user.email }}</span>
-      </div>
+      @if (role === 'student') {
+        <a
+          routerLink="/student/profile"
+          class="app-header__identity app-header__identity--link"
+          title="Quản lý tài khoản cá nhân"
+        >
+          <span class="app-header__name">{{ user.name }}</span>
+          <span class="app-header__email">{{ user.email }}</span>
+        </a>
+      } @else {
+        <div class="app-header__identity">
+          <span class="app-header__name">{{ user.name }}</span>
+          <span class="app-header__email">{{ user.email }}</span>
+        </div>
+      }
       <a routerLink="/login" (click)="authService.logout()" class="btn btn--ghost btn--sm" title="Đăng xuất" aria-label="Đăng xuất">
         <span class="material-symbols-outlined">logout</span>
       </a>

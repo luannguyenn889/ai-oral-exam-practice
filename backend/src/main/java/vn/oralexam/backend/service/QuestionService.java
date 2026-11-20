@@ -36,8 +36,10 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import vn.oralexam.backend.DTO.request.BatchImportCommitRequest;
 import vn.oralexam.backend.DTO.request.SaveCourseRequest;
 import vn.oralexam.backend.DTO.request.SaveQuestionRequest;
@@ -141,7 +143,14 @@ public class QuestionService {
 
     @Transactional(readOnly = true)
     public List<CourseResponse> getAllCourses() {
-        List<Course> courses = courseRepository.findByActiveTrue();
+        return getAllCourses(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CourseResponse> getAllCourses(UUID ownerFilter) {
+        List<Course> courses = courseRepository.findByActiveTrue().stream()
+                .filter(c -> ownerFilter == null || ownerFilter.equals(c.getCreatedBy()))
+                .toList();
         List<Question> allQuestions = questionRepository.findByActiveTrue();
         Map<UUID, User> userCache = userRepository.findAll().stream()
                 .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
@@ -177,8 +186,29 @@ public class QuestionService {
         }).collect(Collectors.toList());
     }
 
+    private void assertCourseOwnership(Course course, UUID userId, boolean isAdmin) {
+        if (userId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Bạn cần đăng nhập để thực hiện thao tác này.");
+        }
+        if (!isAdmin && (course.getCreatedBy() == null || !course.getCreatedBy().equals(userId))) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Bạn không có quyền chỉnh sửa hoặc xóa học phần do giảng viên khác tạo.");
+        }
+    }
+
     public CourseResponse saveCourse(SaveCourseRequest request, UUID userId) {
-        UUID creatorId = resolveUserId(userId);
+        return saveCourse(request, userId, false);
+    }
+
+    public CourseResponse saveCourse(SaveCourseRequest request, UUID userId, boolean isAdmin) {
+        if (userId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Bạn cần đăng nhập với tài khoản giảng viên để tạo hoặc cập nhật học phần.");
+        }
         String normalizedCode = request.code().trim().toUpperCase();
         Course course;
         String oldCode = null;
@@ -199,10 +229,11 @@ public class QuestionService {
         if (request.id() != null) {
             course = courseRepository.findById(request.id())
                     .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy học phần: " + request.id()));
+            assertCourseOwnership(course, userId, isAdmin);
             oldCode = course.getCode();
         } else {
             course = new Course();
-            course.setCreatedBy(creatorId);
+            course.setCreatedBy(userId);
         }
 
         course.setCode(normalizedCode);
@@ -212,7 +243,7 @@ public class QuestionService {
         course.setDepartment(request.department() != null && !request.department().isBlank() ? request.department().trim() : "Khoa Công nghệ Thông tin");
         course.setActive(true);
         if (course.getCreatedBy() == null) {
-            course.setCreatedBy(creatorId);
+            course.setCreatedBy(userId);
         }
 
         course = courseRepository.save(course);
@@ -225,9 +256,9 @@ public class QuestionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        UUID ownerId = course.getCreatedBy() != null ? course.getCreatedBy() : creatorId;
+        UUID ownerId = course.getCreatedBy() != null ? course.getCreatedBy() : userId;
         String instructorName = userRepository.findById(ownerId).map(User::getFullName)
-                .orElse("TS. Nguyễn Luân (Khoa CNTT - ĐH Quy Nhơn)");
+                .orElse("Khoa Công nghệ Thông tin");
 
         return new CourseResponse(
                 course.getId(),
@@ -243,8 +274,9 @@ public class QuestionService {
         );
     }
 
-    public void deleteCourse(String courseIdentifier) {
+    public void deleteCourse(String courseIdentifier, UUID userId, boolean isAdmin) {
         Course course = resolveCourse(courseIdentifier);
+        assertCourseOwnership(course, userId, isAdmin);
         String originalCode = course.getCode();
         String courseUuid = course.getId().toString();
 
@@ -335,8 +367,13 @@ public class QuestionService {
     }
 
     public QuestionResponse saveQuestion(SaveQuestionRequest request, UUID userId) {
+        return saveQuestion(request, userId, false);
+    }
+
+    public QuestionResponse saveQuestion(SaveQuestionRequest request, UUID userId, boolean isAdmin) {
         Course course = resolveCourse(request.courseId());
-        UUID creatorId = resolveUserId(userId);
+        assertCourseOwnership(course, userId, isAdmin);
+        UUID creatorId = userId;
 
         Question question;
         boolean isNew = (request.id() == null);
@@ -414,8 +451,15 @@ public class QuestionService {
     }
 
     public RubricDto saveRubric(UUID questionId, SaveRubricRequest request, UUID userId) {
+        return saveRubric(questionId, request, userId, false);
+    }
+
+    public RubricDto saveRubric(UUID questionId, SaveRubricRequest request, UUID userId, boolean isAdmin) {
         Question question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy câu hỏi: " + questionId));
+        if (question.getCourse() != null) {
+            assertCourseOwnership(question.getCourse(), userId, isAdmin);
+        }
 
         QuestionVersion latestVersion = question.getLatestVersion();
         if (latestVersion == null) {
@@ -454,9 +498,12 @@ public class QuestionService {
         return toRubricDto(newRubric, questionId);
     }
 
-    public void deleteQuestion(UUID id) {
+    public void deleteQuestion(UUID id, UUID userId, boolean isAdmin) {
         Question question = questionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy câu hỏi: " + id));
+        if (question.getCourse() != null) {
+            assertCourseOwnership(question.getCourse(), userId, isAdmin);
+        }
         question.setActive(false);
         questionRepository.save(question);
     }
@@ -557,8 +604,13 @@ public class QuestionService {
      * Nhập hàng loạt câu hỏi và Rubric đã qua kiểm duyệt vào database
      */
     public int commitBatchQuestions(BatchImportCommitRequest request, UUID userId) {
+        return commitBatchQuestions(request, userId, false);
+    }
+
+    public int commitBatchQuestions(BatchImportCommitRequest request, UUID userId, boolean isAdmin) {
         Course course = resolveCourse(request.courseId());
-        UUID creatorId = resolveUserId(userId);
+        assertCourseOwnership(course, userId, isAdmin);
+        UUID creatorId = userId;
 
         if (request.questions() == null || request.questions().isEmpty()) {
             return 0;

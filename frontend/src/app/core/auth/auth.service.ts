@@ -4,19 +4,36 @@ import { BehaviorSubject, Observable, map } from 'rxjs';
 import { User, UserRole } from '../../shared/models';
 import { environment } from '../../../environments/environment';
 
-// Khớp với AuthResponse do backend trả về ở /api/auth/login, /api/auth/register và /api/auth/google.
+// Khớp với UserProfile do backend trả về ở /api/auth/* và /api/users/me.
+export interface UserProfileResponse {
+  id: string | null;
+  email: string;
+  fullName: string;
+  avatarUrl: string | null;
+  roles: UserRole[];
+  studentCode?: string | null;
+  department?: string | null;
+  hasPassword?: boolean;
+}
+
 export interface AuthResponse {
   accessToken: string | null;
   tokenType: 'Bearer' | null;
   expiresIn: number;
   needsRoleSelection?: boolean;
-  user: {
-    id: string | null;
-    email: string;
-    fullName: string;
-    avatarUrl: string | null;
-    roles: UserRole[];
-  };
+  user: UserProfileResponse;
+}
+
+export interface UpdateProfilePayload {
+  fullName: string;
+  avatarUrl?: string;
+  studentCode?: string;
+  department?: string;
+}
+
+export interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export type GoogleLoginResult =
@@ -136,11 +153,65 @@ export class AuthService {
       email: response.user.email,
       role,
       avatarUrl: response.user.avatarUrl ?? undefined,
+      studentCode: response.user.studentCode ?? undefined,
+      department: response.user.department ?? undefined,
+      hasPassword: response.user.hasPassword ?? true,
     };
     localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(user));
     localStorage.setItem(this.TOKEN_STORAGE_KEY, response.accessToken);
     this.currentUserSubject.next(user);
     return user;
+  }
+
+  fetchProfile(): Observable<User> {
+    return this.http
+      .get<UserProfileResponse>(`${environment.apiBaseUrl}/users/me`)
+      .pipe(map((profile) => this.syncUserProfile(profile)));
+  }
+
+  updateProfile(payload: UpdateProfilePayload): Observable<User> {
+    return this.http
+      .put<UserProfileResponse>(`${environment.apiBaseUrl}/users/me`, payload)
+      .pipe(map((profile) => this.syncUserProfile(profile)));
+  }
+
+  changePassword(
+    payload: ChangePasswordPayload,
+  ): Observable<{ message: string; hasPassword: boolean }> {
+    return this.http
+      .put<{ message: string; hasPassword: boolean }>(
+        `${environment.apiBaseUrl}/users/me/password`,
+        payload,
+      )
+      .pipe(
+        map((res) => {
+          const current = this.currentUserSubject.value;
+          if (current) {
+            const updated: User = { ...current, hasPassword: res.hasPassword };
+            localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(updated));
+            this.currentUserSubject.next(updated);
+          }
+          return res;
+        }),
+      );
+  }
+
+  syncUserProfile(profile: UserProfileResponse): User {
+    const current = this.currentUserSubject.value;
+    const role = profile.roles?.[0] || current?.role || 'student';
+    const updated: User = {
+      id: profile.id || current?.id || '',
+      name: profile.fullName,
+      email: profile.email,
+      role,
+      avatarUrl: profile.avatarUrl ?? undefined,
+      studentCode: profile.studentCode ?? undefined,
+      department: profile.department ?? undefined,
+      hasPassword: profile.hasPassword ?? current?.hasPassword,
+    };
+    localStorage.setItem(this.USER_STORAGE_KEY, JSON.stringify(updated));
+    this.currentUserSubject.next(updated);
+    return updated;
   }
 
   logout(): void {

@@ -44,6 +44,12 @@ public class User {
     @Column(name = "avatar_url", columnDefinition = "text")
     private String avatarUrl;
 
+    @Column(name = "student_code", columnDefinition = "text")
+    private String studentCode;
+
+    @Column(name = "department", columnDefinition = "text")
+    private String department;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
@@ -116,6 +122,22 @@ public class User {
 
     public void setAvatarUrl(String avatarUrl) {
         this.avatarUrl = avatarUrl;
+    }
+
+    public String getStudentCode() {
+        return studentCode;
+    }
+
+    public void setStudentCode(String studentCode) {
+        this.studentCode = studentCode;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public void setDepartment(String department) {
+        this.department = department;
     }
 
     public boolean isActive() {

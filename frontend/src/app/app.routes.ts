@@ -81,6 +81,13 @@ export const routes: Routes = [
             (m) => m.StudentHistoryComponent,
           ),
       },
+      {
+        path: 'profile',
+        loadComponent: () =>
+          import('./features/student/student-profile/student-profile.component').then(
+            (m) => m.StudentProfileComponent,
+          ),
+      },
     ],
   },
 

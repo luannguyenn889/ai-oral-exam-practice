@@ -5,6 +5,7 @@ import { PracticeApi } from '../../../data-access/api/practice.api';
 import { CriterionEvaluation, Evaluation, PracticeSession, Question } from '../../../shared/models';
 import { SkeletonComponent } from '../../../shared/components/skeleton/skeleton.component';
 import { ErrorStateComponent } from '../../../shared/components/error-state/error-state.component';
+import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
 
 @Component({
   selector: 'app-session-result',
@@ -43,7 +44,11 @@ export class SessionResultComponent implements OnInit, OnDestroy {
         this.session = s;
         this.practiceApi.getQuestion(s.questionId).subscribe({
           next: (q) => {
-            this.question = q;
+            this.question = {
+              ...q,
+              content: cleanHtmlToPlainText(q.content),
+              sampleAnswer: cleanHtmlToPlainText(q.sampleAnswer),
+            };
           },
           error: () => {
             // Keep null if question not found

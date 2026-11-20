@@ -18,6 +18,7 @@ export class StudentLayoutComponent {
     { label: 'Tổng quan', path: '/student/dashboard', icon: 'dashboard' },
     { label: 'Học phần & Câu hỏi', path: '/student/courses', icon: 'menu_book' },
     { label: 'Lịch sử luyện tập', path: '/student/history', icon: 'history' },
+    { label: 'Tài khoản', path: '/student/profile', icon: 'manage_accounts' },
   ];
   readonly footerText = '© 2026 Hệ Thống Ôn Luyện Vấn Đáp Tích Hợp AI. Sản phẩm phục vụ Đồ án NCKH.';
 }

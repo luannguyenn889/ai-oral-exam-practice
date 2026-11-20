@@ -25,27 +25,108 @@
           <app-skeleton variant="card"></app-skeleton>
         </div>
       } @else {
-        <div class="grid-cards">
-          @for (course of courses; track course.id) {
-            <div class="card course-card">
-              <div class="course-card__badge">{{ course.code }}</div>
-              <h3 class="course-card__title">{{ course.name }}</h3>
-              <p class="course-card__desc">{{ course.description }}</p>
-              <div class="course-card__footer">
-                <span class="course-card__count">
-                  <span class="material-symbols-outlined">quiz</span>
-                  {{ course.questionCount }} câu hỏi
-                </span>
-                <a
-                  [routerLink]="['/student/courses', course.id, 'questions']"
-                  class="btn btn--secondary btn--sm"
-                >
-                  Vào luyện tập
-                </a>
-              </div>
+        @if (courses.length > 0) {
+          <div class="course-filter-bar">
+            <div class="course-filter-search">
+              <span class="material-symbols-outlined">search</span>
+              <input
+                type="text"
+                class="course-filter-input"
+                [(ngModel)]="searchQuery"
+                placeholder="Tìm mã hoặc tên học phần..."
+              />
             </div>
-          }
-        </div>
+
+            <select
+              class="course-filter-select"
+              [(ngModel)]="selectedDepartment"
+              aria-label="Lọc theo khoa"
+            >
+              <option value="">Tất cả khoa</option>
+              @for (dept of availableDepartments; track dept) {
+                <option [value]="dept">{{ dept }}</option>
+              }
+            </select>
+
+            <button
+              type="button"
+              class="course-filter-chip"
+              [class.course-filter-chip--active]="onlyWithQuestions"
+              (click)="onlyWithQuestions = !onlyWithQuestions"
+            >
+              <span class="material-symbols-outlined">
+                {{ onlyWithQuestions ? 'check_circle' : 'filter_alt' }}
+              </span>
+              Có câu hỏi
+            </button>
+
+            <select
+              class="course-filter-select"
+              [(ngModel)]="sortBy"
+              aria-label="Sắp xếp học phần"
+            >
+              <option value="default">Sắp xếp: Mặc định</option>
+              <option value="questions_desc">Nhiều câu hỏi nhất</option>
+              <option value="name_asc">Tên A → Z</option>
+            </select>
+
+            @if (hasActiveCourseFilter) {
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                (click)="resetCourseFilters()"
+              >
+                <span class="material-symbols-outlined">close</span>
+                Xóa lọc
+              </button>
+            }
+          </div>
+        }
+
+        @if (filteredCourses.length === 0) {
+          <div class="card empty-card">
+            <p>Không tìm thấy học phần nào phù hợp với bộ lọc hiện tại.</p>
+            @if (hasActiveCourseFilter) {
+              <button
+                type="button"
+                class="btn btn--secondary btn--sm"
+                style="margin-top: 0.75rem;"
+                (click)="resetCourseFilters()"
+              >
+                Hiển thị tất cả học phần
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="grid-cards">
+            @for (course of filteredCourses; track course.id) {
+              <div class="card course-card">
+                <div class="course-card__top">
+                  <div class="course-card__badge">{{ course.code }}</div>
+                  @if (course.department) {
+                    <span class="course-card__dept" [title]="course.department">{{
+                      course.department
+                    }}</span>
+                  }
+                </div>
+                <h3 class="course-card__title">{{ course.name }}</h3>
+                <p class="course-card__desc">{{ course.description }}</p>
+                <div class="course-card__footer">
+                  <span class="course-card__count">
+                    <span class="material-symbols-outlined">quiz</span>
+                    {{ course.questionCount }} câu hỏi
+                  </span>
+                  <a
+                    [routerLink]="['/student/courses', course.id, 'questions']"
+                    class="btn btn--secondary btn--sm"
+                  >
+                    Vào luyện tập
+                  </a>
+                </div>
+              </div>
+            }
+          </div>
+        }
       }
     </section>
 

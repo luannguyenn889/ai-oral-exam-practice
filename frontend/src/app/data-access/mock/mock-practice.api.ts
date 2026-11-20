@@ -60,8 +60,9 @@ export class MockPracticeApi extends PracticeApi {
     return this.mockSessions.find((item) => item.id === sessionId);
   }
 
-  override getCourses(): Observable<Course[]> {
-    return this.http.get<Course[]>(`${environment.apiBaseUrl}/courses`).pipe(
+  override getCourses(mineOnly = false): Observable<Course[]> {
+    const query = mineOnly ? '?mineOnly=true' : '';
+    return this.http.get<Course[]>(`${environment.apiBaseUrl}/courses${query}`).pipe(
       map((courses) => {
         this.mockCourses = Array.isArray(courses) ? [...courses] : [];
         return this.mockCourses;

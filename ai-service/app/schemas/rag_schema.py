@@ -12,11 +12,18 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+ChunkingStrategy = Literal["recursive", "semantic", "legacy"]
+
+
 class RagIndexRequest(BaseModel):
     course_id: str = Field(default="default", description="Mã học phần (ví dụ: IT2030)")
     force_reindex: bool = Field(default=False, description="Bắt buộc tạo lại chỉ mục toàn bộ file trong học phần")
-    embedding_provider: Optional[Literal["local", "gemini"]] = Field(
-        default=None, description="Ghi đè embedding provider ('local' hoặc 'gemini')"
+    embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
+        default=None, description="Ghi đè embedding provider ('local', 'e5-small', hoặc 'gemini')"
+    )
+    chunking_strategy: Optional[ChunkingStrategy] = Field(
+        default=None,
+        description="Chiến lược chia đoạn: 'recursive' (mặc định), 'semantic', hoặc 'legacy' (cách cũ 600 ký tự)",
     )
 
 
@@ -28,6 +35,7 @@ class RagIndexResponse(BaseModel):
     removed_chunks: int = 0
     total_chunks: int
     embedding_model: str
+    chunking_strategy: str = "recursive"
 
 
 class RagSearchRequest(BaseModel):
@@ -41,6 +49,9 @@ class RagSearchRequest(BaseModel):
         default=None, ge=0.0, le=1.0, description="Ngưỡng Cosine Similarity tối thiểu (0..1)"
     )
     use_rerank: bool = Field(default=False, description="Bật tầng Cross-Encoder Reranker")
+    embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
+        default=None, description="Ghi đè embedding provider ('local', 'e5-small', hoặc 'gemini')"
+    )
 
 
 class RagChunkResult(BaseModel):
@@ -75,6 +86,7 @@ class RagStatusResponse(BaseModel):
     files: list[str]
     embedding_model: str
     reranker_model: str
+    chunking_strategy: str = "recursive"
     hybrid_bm25_active: bool
     reranker_enabled_by_default: bool = False
     search_modes_available: list[str]

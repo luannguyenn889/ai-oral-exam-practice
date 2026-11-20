@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { HttpClient, HttpEvent, HttpEventType } from '@angular/common/http';
+import { Observable, filter, map } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   AiHealthStatus,
@@ -10,6 +10,18 @@ import {
   RagSearchResponse,
   RagStatus,
 } from '../../shared/models';
+
+export interface RagUploadProgressEvent {
+  phase: 'uploading' | 'processing' | 'done';
+  uploadPercent: number;
+  result?: {
+    courseId: string;
+    status: string;
+    totalFiles: number;
+    addedOrUpdatedChunks: number;
+    totalChunks: number;
+  };
+}
 
 interface RawAiHealth {
   status: string;
@@ -31,6 +43,7 @@ interface RawRagStatus {
   files: string[];
   embedding_model: string;
   reranker_model: string;
+  chunking_strategy?: string;
   hybrid_bm25_active: boolean;
   search_modes_available: string[];
   features: string[];
@@ -45,6 +58,7 @@ interface RawRagIndexResponse {
   removed_chunks: number;
   total_chunks: number;
   embedding_model: string;
+  chunking_strategy?: string;
 }
 
 interface RawRagSearchResponse {
@@ -78,6 +92,9 @@ export interface SttPipelineResult {
   processingTimeMs: number;
 }
 
+export type EmbeddingProviderOption = 'local' | 'e5-small' | 'gemini';
+export type ChunkingStrategyOption = 'recursive' | 'semantic' | 'legacy';
+
 @Injectable({
   providedIn: 'root',
 })
@@ -101,11 +118,16 @@ export class AiRagService {
     );
   }
 
-  getRagStatus(courseId = 'IT2030'): Observable<RagStatus> {
+  getRagStatus(
+    courseId = 'IT2030',
+    embeddingProvider?: EmbeddingProviderOption,
+  ): Observable<RagStatus> {
+    const params: Record<string, string> = { course_id: courseId };
+    if (embeddingProvider) {
+      params['embedding_provider'] = embeddingProvider;
+    }
     return this.http
-      .get<RawRagStatus>(`${this.aiUrl}/ai/rag/status`, {
-        params: { course_id: courseId },
-      })
+      .get<RawRagStatus>(`${this.aiUrl}/ai/rag/status`, { params })
       .pipe(
         map((res) => ({
           courseId: res.course_id,
@@ -115,6 +137,7 @@ export class AiRagService {
           files: res.files || [],
           embeddingModel: res.embedding_model,
           rerankerModel: res.reranker_model,
+          chunkingStrategy: res.chunking_strategy,
           hybridBm25Active: res.hybrid_bm25_active,
           searchModesAvailable: res.search_modes_available || [],
           features: res.features || [],
@@ -126,6 +149,8 @@ export class AiRagService {
   indexCourseDocuments(
     courseId = 'IT2030',
     forceReindex = false,
+    embeddingProvider?: EmbeddingProviderOption,
+    chunkingStrategy?: ChunkingStrategyOption,
   ): Observable<{
     courseId: string;
     status: string;
@@ -133,11 +158,14 @@ export class AiRagService {
     addedOrUpdatedChunks: number;
     totalChunks: number;
     embeddingModel: string;
+    chunkingStrategy?: string;
   }> {
     return this.http
       .post<RawRagIndexResponse>(`${this.aiUrl}/ai/rag/index`, {
         course_id: courseId,
         force_reindex: forceReindex,
+        ...(embeddingProvider ? { embedding_provider: embeddingProvider } : {}),
+        ...(chunkingStrategy ? { chunking_strategy: chunkingStrategy } : {}),
       })
       .pipe(
         map((res) => ({
@@ -147,6 +175,7 @@ export class AiRagService {
           addedOrUpdatedChunks: res.added_or_updated_chunks,
           totalChunks: res.total_chunks,
           embeddingModel: res.embedding_model,
+          chunkingStrategy: res.chunking_strategy,
         })),
       );
   }
@@ -155,6 +184,8 @@ export class AiRagService {
     courseId: string,
     file: File,
     forceReindex = false,
+    embeddingProvider?: EmbeddingProviderOption,
+    chunkingStrategy?: ChunkingStrategyOption,
   ): Observable<{
     courseId: string;
     status: string;
@@ -165,6 +196,12 @@ export class AiRagService {
     const formData = new FormData();
     formData.append('course_id', courseId);
     formData.append('force_reindex', String(forceReindex));
+    if (embeddingProvider) {
+      formData.append('embedding_provider', embeddingProvider);
+    }
+    if (chunkingStrategy) {
+      formData.append('chunking_strategy', chunkingStrategy);
+    }
     formData.append('file', file, file.name);
     return this.http.post<RawRagIndexResponse>(`${this.aiUrl}/ai/rag/upload`, formData).pipe(
       map((res) => ({
@@ -175,6 +212,63 @@ export class AiRagService {
         totalChunks: res.total_chunks,
       })),
     );
+  }
+
+  uploadCourseDocumentWithProgress(
+    courseId: string,
+    file: File,
+    forceReindex = false,
+    embeddingProvider?: EmbeddingProviderOption,
+    chunkingStrategy?: ChunkingStrategyOption,
+  ): Observable<RagUploadProgressEvent> {
+    const formData = new FormData();
+    formData.append('course_id', courseId);
+    formData.append('force_reindex', String(forceReindex));
+    if (embeddingProvider) {
+      formData.append('embedding_provider', embeddingProvider);
+    }
+    if (chunkingStrategy) {
+      formData.append('chunking_strategy', chunkingStrategy);
+    }
+    formData.append('file', file, file.name);
+
+    return this.http
+      .post<RawRagIndexResponse>(`${this.aiUrl}/ai/rag/upload`, formData, {
+        reportProgress: true,
+        observe: 'events',
+      })
+      .pipe(
+        map((event: HttpEvent<RawRagIndexResponse>): RagUploadProgressEvent | null => {
+          if (event.type === HttpEventType.Sent) {
+            return { phase: 'uploading', uploadPercent: 0 };
+          }
+          if (event.type === HttpEventType.UploadProgress) {
+            const pct = event.total
+              ? Math.min(100, Math.round((100 * event.loaded) / event.total))
+              : 0;
+            return {
+              phase: pct >= 100 ? 'processing' : 'uploading',
+              uploadPercent: pct,
+            };
+          }
+          if (event.type === HttpEventType.Response && event.body) {
+            const res = event.body;
+            return {
+              phase: 'done',
+              uploadPercent: 100,
+              result: {
+                courseId: res.course_id,
+                status: res.status,
+                totalFiles: res.total_files,
+                addedOrUpdatedChunks: res.added_or_updated_chunks,
+                totalChunks: res.total_chunks,
+              },
+            };
+          }
+          return null;
+        }),
+        filter((ev): ev is RagUploadProgressEvent => ev !== null),
+      );
   }
 
   getServerDocumentUrl(courseId: string, filename: string): string {
@@ -284,6 +378,7 @@ export class AiRagService {
     topK?: number;
     searchMode?: 'hybrid' | 'dense' | 'bm25';
     useRerank?: boolean;
+    embeddingProvider?: EmbeddingProviderOption;
   }): Observable<RagSearchResponse> {
     return this.http
       .post<RawRagSearchResponse>(`${this.aiUrl}/ai/rag/search`, {
@@ -292,6 +387,7 @@ export class AiRagService {
         top_k: params.topK ?? 3,
         search_mode: params.searchMode ?? 'hybrid',
         use_rerank: params.useRerank ?? false,
+        ...(params.embeddingProvider ? { embedding_provider: params.embeddingProvider } : {}),
       })
       .pipe(
         map((res) => ({

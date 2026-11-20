@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import vn.oralexam.backend.DTO.request.BatchImportCommitRequest;
 import vn.oralexam.backend.DTO.request.SaveQuestionRequest;
 import vn.oralexam.backend.DTO.request.SaveRubricRequest;
@@ -71,8 +72,8 @@ public class QuestionController {
             @Valid @RequestBody SaveQuestionRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
-        return questionService.saveQuestion(request, userId);
+        UUID userId = requireUserId(authentication);
+        return questionService.saveQuestion(request, userId, hasAdminRole(authentication));
     }
 
     /**
@@ -84,7 +85,7 @@ public class QuestionController {
             @Valid @RequestBody SaveQuestionRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
+        UUID userId = requireUserId(authentication);
         SaveQuestionRequest syncedRequest = new SaveQuestionRequest(
                 id,
                 request.courseId(),
@@ -97,7 +98,7 @@ public class QuestionController {
                 request.tags(),
                 request.parentQuestionId()
         );
-        return questionService.saveQuestion(syncedRequest, userId);
+        return questionService.saveQuestion(syncedRequest, userId, hasAdminRole(authentication));
     }
 
     /**
@@ -109,8 +110,8 @@ public class QuestionController {
             @RequestBody SaveRubricRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
-        return questionService.saveRubric(id, request, userId);
+        UUID userId = requireUserId(authentication);
+        return questionService.saveRubric(id, request, userId, hasAdminRole(authentication));
     }
 
     /**
@@ -118,8 +119,9 @@ public class QuestionController {
      */
     @DeleteMapping("/questions/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteQuestion(@PathVariable UUID id) {
-        questionService.deleteQuestion(id);
+    public void deleteQuestion(@PathVariable UUID id, Authentication authentication) {
+        UUID userId = requireUserId(authentication);
+        questionService.deleteQuestion(id, userId, hasAdminRole(authentication));
     }
 
     /**
@@ -142,8 +144,8 @@ public class QuestionController {
             @Valid @RequestBody BatchImportCommitRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
-        int count = questionService.commitBatchQuestions(request, userId);
+        UUID userId = requireUserId(authentication);
+        int count = questionService.commitBatchQuestions(request, userId, hasAdminRole(authentication));
         return Map.of(
                 "success", true,
                 "importedCount", count,
@@ -151,13 +153,19 @@ public class QuestionController {
         );
     }
 
-    private UUID extractUserId(Authentication authentication) {
-        if (authentication != null && authentication.getName() != null) {
-            try {
-                return UUID.fromString(authentication.getName());
-            } catch (IllegalArgumentException ignored) {
-            }
+    private UUID requireUserId(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Bạn cần đăng nhập để thực hiện thao tác này.");
         }
-        return null;
+        try {
+            return UUID.fromString(authentication.getName());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Phiên đăng nhập không hợp lệ.");
+        }
+    }
+
+    private boolean hasAdminRole(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
     }
 }

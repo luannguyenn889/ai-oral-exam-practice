@@ -20,6 +20,9 @@ export interface User {
   email: string;
   role: UserRole;
   avatarUrl?: string;
+  studentCode?: string;
+  department?: string;
+  hasPassword?: boolean;
 }
 
 export interface Course {
@@ -162,6 +165,7 @@ export interface RagStatus {
   files: string[];
   embeddingModel: string;
   rerankerModel: string;
+  chunkingStrategy?: string;
   hybridBm25Active: boolean;
   searchModesAvailable: string[];
   features: string[];

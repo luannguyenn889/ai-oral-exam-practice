@@ -1,0 +1,234 @@
+<div class="profile-page">
+  <header class="profile-header">
+    <div>
+      <h1 class="profile-header__title">Tài khoản của tôi</h1>
+      <p class="profile-header__subtitle">
+        Cập nhật thông tin cá nhân, khoa theo học và bảo mật mật khẩu đăng nhập.
+      </p>
+    </div>
+    <a routerLink="/student/dashboard" class="btn btn--secondary btn--sm">
+      <span class="material-symbols-outlined">arrow_back</span>
+      Về Tổng quan
+    </a>
+  </header>
+
+  @if (loading) {
+    <div class="profile-grid">
+      <div class="card"><app-skeleton variant="card"></app-skeleton></div>
+      <div class="card"><app-skeleton variant="card"></app-skeleton></div>
+    </div>
+  } @else {
+    <div class="profile-grid">
+      <!-- Khối 1: Thông tin cá nhân -->
+      <section class="card profile-card">
+        <div class="profile-card__head">
+          <span class="material-symbols-outlined profile-card__icon">badge</span>
+          <div>
+            <h2 class="profile-card__title">Thông tin cá nhân</h2>
+            <p class="profile-card__desc">
+              Thông tin khoa giúp hệ thống gợi ý và lọc sẵn học phần phù hợp cho bạn.
+            </p>
+          </div>
+        </div>
+
+        <div class="profile-avatar-row">
+          @if (avatarUrl.trim()) {
+            <img [src]="avatarUrl.trim()" alt="Ảnh đại diện" class="profile-avatar-img" />
+          } @else {
+            <div class="profile-avatar-fallback">{{ avatarInitials }}</div>
+          }
+          <div class="profile-avatar-meta">
+            <div class="profile-avatar-name">{{ fullName || 'Sinh viên' }}</div>
+            <div class="profile-avatar-email">{{ email }}</div>
+          </div>
+        </div>
+
+        <form class="profile-form" (ngSubmit)="saveProfile()">
+          <div class="form-group">
+            <label class="form-label" for="profile-email">Email đăng nhập</label>
+            <input
+              id="profile-email"
+              type="email"
+              class="form-input form-input--readonly"
+              [value]="email"
+              readonly
+            />
+            <span class="form-hint">Email là định danh cố định và không thể thay đổi.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="profile-fullname">Họ và tên <span class="required">*</span></label>
+            <input
+              id="profile-fullname"
+              name="fullName"
+              type="text"
+              class="form-input"
+              [(ngModel)]="fullName"
+              placeholder="Nhập họ và tên đầy đủ..."
+              required
+            />
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="profile-student-code">Mã sinh viên (MSSV)</label>
+              <input
+                id="profile-student-code"
+                name="studentCode"
+                type="text"
+                class="form-input"
+                [(ngModel)]="studentCode"
+                placeholder="VD: 4551050123"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="profile-department">Khoa</label>
+              <input
+                id="profile-department"
+                name="department"
+                type="text"
+                class="form-input"
+                list="student-department-options"
+                [(ngModel)]="department"
+                placeholder="VD: Khoa Công nghệ Thông tin"
+              />
+              <datalist id="student-department-options">
+                @for (dept of availableDepartments; track dept) {
+                  <option [value]="dept"></option>
+                }
+              </datalist>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="profile-avatar">Đường dẫn ảnh đại diện (URL)</label>
+            <input
+              id="profile-avatar"
+              name="avatarUrl"
+              type="url"
+              class="form-input"
+              [(ngModel)]="avatarUrl"
+              placeholder="https://..."
+            />
+          </div>
+
+          <div class="profile-form__actions">
+            <button type="submit" class="btn btn--primary" [disabled]="savingProfile">
+              <span class="material-symbols-outlined">save</span>
+              {{ savingProfile ? 'Đang lưu...' : 'Lưu thông tin cá nhân' }}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Khối 2: Đổi mật khẩu -->
+      <section class="card profile-card">
+        <div class="profile-card__head">
+          <span class="material-symbols-outlined profile-card__icon">lock</span>
+          <div>
+            <h2 class="profile-card__title">
+              {{ hasPassword ? 'Đổi mật khẩu' : 'Thiết lập mật khẩu đăng nhập' }}
+            </h2>
+            <p class="profile-card__desc">
+              {{
+                hasPassword
+                  ? 'Sử dụng mật khẩu mạnh tối thiểu 8 ký tự để bảo vệ tài khoản.'
+                  : 'Tài khoản đăng nhập qua Google chưa có mật khẩu cục bộ. Bạn có thể tạo mật khẩu để đăng nhập bằng Email.'
+              }}
+            </p>
+          </div>
+        </div>
+
+        <form class="profile-form" (ngSubmit)="submitChangePassword()">
+          @if (hasPassword) {
+            <div class="form-group">
+              <label class="form-label" for="current-password">Mật khẩu hiện tại <span class="required">*</span></label>
+              <div class="password-wrap">
+                <input
+                  id="current-password"
+                  name="currentPassword"
+                  [type]="showCurrentPassword ? 'text' : 'password'"
+                  class="form-input"
+                  [(ngModel)]="currentPassword"
+                  placeholder="Nhập mật khẩu hiện tại..."
+                />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="showCurrentPassword = !showCurrentPassword"
+                  aria-label="Hiện hoặc ẩn mật khẩu hiện tại"
+                >
+                  <span class="material-symbols-outlined">
+                    {{ showCurrentPassword ? 'visibility_off' : 'visibility' }}
+                  </span>
+                </button>
+              </div>
+            </div>
+          }
+
+          <div class="form-group">
+            <label class="form-label" for="new-password">Mật khẩu mới <span class="required">*</span></label>
+            <div class="password-wrap">
+              <input
+                id="new-password"
+                name="newPassword"
+                [type]="showNewPassword ? 'text' : 'password'"
+                class="form-input"
+                [(ngModel)]="newPassword"
+                placeholder="Tối thiểu 8 ký tự..."
+              />
+              <button
+                type="button"
+                class="password-toggle"
+                (click)="showNewPassword = !showNewPassword"
+                aria-label="Hiện hoặc ẩn mật khẩu mới"
+              >
+                <span class="material-symbols-outlined">
+                  {{ showNewPassword ? 'visibility_off' : 'visibility' }}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="confirm-password">Xác nhận mật khẩu mới <span class="required">*</span></label>
+            <div class="password-wrap">
+              <input
+                id="confirm-password"
+                name="confirmPassword"
+                [type]="showConfirmPassword ? 'text' : 'password'"
+                class="form-input"
+                [(ngModel)]="confirmPassword"
+                placeholder="Nhập lại mật khẩu mới..."
+              />
+              <button
+                type="button"
+                class="password-toggle"
+                (click)="showConfirmPassword = !showConfirmPassword"
+                aria-label="Hiện hoặc ẩn xác nhận mật khẩu"
+              >
+                <span class="material-symbols-outlined">
+                  {{ showConfirmPassword ? 'visibility_off' : 'visibility' }}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="profile-form__actions">
+            <button type="submit" class="btn btn--primary" [disabled]="changingPassword">
+              <span class="material-symbols-outlined">key</span>
+              {{
+                changingPassword
+                  ? 'Đang cập nhật...'
+                  : hasPassword
+                    ? 'Cập nhật mật khẩu'
+                    : 'Tạo mật khẩu'
+              }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  }
+</div>

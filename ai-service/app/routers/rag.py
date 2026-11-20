@@ -62,6 +62,7 @@ def index_course_documents(request: RagIndexRequest) -> RagIndexResponse:
             course_id=request.course_id,
             force_reindex=request.force_reindex,
             embedding_provider=request.embedding_provider,
+            chunking_strategy=request.chunking_strategy,
         )
         return RagIndexResponse(**result)
     except Exception as exc:
@@ -72,6 +73,8 @@ def index_course_documents(request: RagIndexRequest) -> RagIndexResponse:
 async def upload_and_index_document(
     course_id: str = Form(default="default"),
     force_reindex: bool = Form(default=False),
+    embedding_provider: Optional[str] = Form(default=None),
+    chunking_strategy: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
 ) -> RagIndexResponse:
     if not file.filename:
@@ -91,9 +94,13 @@ async def upload_and_index_document(
         content = await file.read()
         with open(target_path, "wb") as out_file:
             out_file.write(content)
+        resolved_provider = embedding_provider if isinstance(embedding_provider, str) else None
+        resolved_strategy = chunking_strategy if isinstance(chunking_strategy, str) else None
         result = rag_service.index_documents(
             course_id=course_id,
             force_reindex=force_reindex,
+            embedding_provider=resolved_provider,
+            chunking_strategy=resolved_strategy,
         )
         return RagIndexResponse(**result)
     except Exception as exc:
@@ -112,6 +119,7 @@ def search_course_documents(request: RagSearchRequest) -> RagSearchResponse:
             score_threshold=request.score_threshold,
             search_mode=request.search_mode,
             use_rerank=request.use_rerank,
+            embedding_provider=request.embedding_provider,
         )
         formatted = rag_service.format_rag_context(chunks)
         results = [

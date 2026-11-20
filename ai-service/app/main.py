@@ -11,6 +11,7 @@ Nhiệm vụ:
 - Cung cấp endpoint kiểm tra tình trạng dịch vụ (/health và /ai/health).
 """
 
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -20,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import evaluations, question_import, rag, transcriptions
+from app.services import rag_service
 
 
 @asynccontextmanager
@@ -31,6 +33,7 @@ async def lifespan(_app: FastAPI):
         f"ChromaDB={settings.resolved_chroma_db_dir}",
         flush=True,
     )
+    threading.Thread(target=rag_service.warmup_rag_background, daemon=True).start()
     yield
 
 

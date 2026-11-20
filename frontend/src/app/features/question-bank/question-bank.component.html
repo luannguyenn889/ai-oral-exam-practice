@@ -73,7 +73,7 @@
   </header>
 
   <!-- Filter & Search Controls Bar -->
-  <div class="controls-bar">
+  <div class="controls-bar" #questionsTop>
     <div class="controls-bar__top">
       <div class="controls-bar__search">
         <span class="material-symbols-outlined search-icon">search</span>
@@ -185,7 +185,7 @@
     ></app-empty-state>
   } @else {
     <div class="questions-list">
-      @for (q of filteredQuestions; track q.id) {
+      @for (q of paginatedQuestions; track q.id) {
         <div class="question-card">
           <div class="question-card__header">
             <div class="question-card__meta-left">
@@ -261,5 +261,15 @@
         </div>
       }
     </div>
+
+    <app-pagination
+      [totalItems]="filteredQuestions.length"
+      [currentPage]="safeCurrentPage"
+      [pageSize]="pageSize"
+      [pageSizeOptions]="[5, 10, 20, 50]"
+      itemLabel="câu hỏi"
+      (pageChange)="onPageChange($event)"
+      (pageSizeChange)="onPageSizeChange($event)"
+    ></app-pagination>
   }
 </div>

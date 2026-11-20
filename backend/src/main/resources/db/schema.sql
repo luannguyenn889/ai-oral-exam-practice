@@ -9,6 +9,8 @@ CREATE TABLE users (
     full_name TEXT NOT NULL,
     password_hash TEXT,
     avatar_url TEXT,
+    student_code TEXT,
+    department TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
