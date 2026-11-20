@@ -53,7 +53,7 @@ echo       - Swagger UI   : http://localhost:8000/docs
 echo       (Nhan Ctrl+C de dung dich vu)
 echo ========================================================
 call ".venv\Scripts\activate.bat"
-".venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --access-log
+".venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app --access-log
 
 echo.
 echo [THONG BAO] Dich vu FastAPI da dung.

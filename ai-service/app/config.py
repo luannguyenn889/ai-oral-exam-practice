@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     default_llm_model: str = "gemini-2.5-flash"
     embedding_provider: str = "local"
     embedding_model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    e5_embedding_model_name: str = "intfloat/multilingual-e5-small"
     gemini_embedding_model_name: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"

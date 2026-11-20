@@ -240,42 +240,50 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
     if llm_model.lower() == "mock":
         return _evaluate_mock(request, rubric_items, rag_refs, start_ts)
 
-    # 2. Xây dựng Prompt chấm điểm từ bộ prompt chuẩn của speed-to-text-demo + chi tiết từng tiêu chí Rubric
+    # 2. Xây dựng Prompt chấm điểm phân định rõ trọng số: Đáp án mẫu & Rubric (chính) > RAG Context (bổ trợ)
     rubric_json_str = json.dumps(rubric_items, ensure_ascii=False, indent=2)
     rag_section = ""
     if rag_context_str and rag_context_str.strip():
         rag_section = f"""
-DƯỚI ĐÂY LÀ KIẾN THỨC CHUẨN ĐƯỢC TRÍCH XUẤT TỪ TÀI LIỆU/GIÁO TRÌNH MÔN HỌC (RAG CONTEXT):
-======================================================================
+NGUỒN BỔ TRỢ / DỰ PHÒNG - NGỮ CẢNH GIÁO TRÌNH TRUY XUẤT TỰ ĐỘNG (RAG CONTEXT):
+----------------------------------------------------------------------
 {rag_context_str}
-======================================================================
-Hãy đối chiếu kỹ lưỡng bài trả lời của sinh viên với tài liệu chuẩn ở trên để đánh giá độ chính xác về mặt học thuật và các thuật ngữ chuyên ngành.
+----------------------------------------------------------------------
+Lưu ý sử dụng RAG Context:
+- Đây chỉ là nguồn tham khảo BỔ TRỢ (trọng số phụ) dùng khi sinh viên diễn đạt mở rộng hoặc dùng cách giải thích khác trong giáo trình mà Đáp án mẫu chưa liệt kê hết.
+- Nếu đoạn RAG có thông tin nhiễu, không liên quan trực tiếp đến câu hỏi hoặc mâu thuẫn với Đáp án mẫu của giảng viên, BẮT BUỘC bỏ qua đoạn RAG đó và tuân theo Đáp án mẫu + Rubric.
 """
 
     ref_section = (
-        f"\nĐáp án tham chiếu của giảng viên:\n{request.reference_answer}\n"
+        f"""
+NGUỒN ĐỐI CHIẾU CHÍNH (ƯU TIÊN CAO NHẤT) - ĐÁP ÁN MẪU CỦA GIẢNG VIÊN:
+======================================================================
+{request.reference_answer.strip()}
+======================================================================
+"""
         if request.reference_answer.strip()
-        else ""
+        else "\n(Chưa có Đáp án mẫu riêng; sử dụng Tiêu chí Rubric làm nguồn đối chiếu chính và RAG Context làm ngữ cảnh tham khảo.)\n"
     )
 
     prompt = f"""
-Bạn là giảng viên đại học chuyên ngành Công nghệ thông tin. Đánh giá câu trả lời vấn đáp của sinh viên theo thang điểm {max_total_score} dựa trên rubric và tài liệu môn học.
+Bạn là giảng viên đại học chuyên ngành Công nghệ thông tin. Hãy đánh giá câu trả lời vấn đáp của sinh viên theo thang điểm {max_total_score}.
 
 Câu hỏi:
 {request.question}
 {ref_section}
-Tiêu chí chấm điểm (Rubric):
+NGUỒN ĐỐI CHIẾU CHÍNH - TIÊU CHÍ CHẤM ĐIỂM (RUBRIC):
 {rubric_json_str}
 {rag_section}
-Văn bản câu trả lời của sinh viên (được ghi âm và chuyển thành văn bản):
+Văn bản câu trả lời của sinh viên (đã chuyển từ giọng nói sang văn bản):
 {request.transcript}
 
-Yêu cầu:
-- Cho điểm từng tiêu chí trong danh sách `criteria` (giữ nguyên `criterion_id`, điểm `score` không vượt quá `max_score` của tiêu chí đó, chấp nhận điểm lẻ như 0.5, 1.25, 1.5). Trích dẫn nguyên văn câu nói của sinh viên vào `evidence` và liệt kê các ý thiếu/sai vào `missing_or_incorrect`.
-- Nhận xét chi tiết (`summary`) về tính logic, độ chính xác kiến thức và cách diễn đạt (đặc biệt đối chiếu với nội dung kiến thức chuẩn từ RAG nếu có).
-- Chỉ ra 3 điểm mạnh cụ thể (`strengths`).
-- Chỉ ra 3 điểm yếu hoặc điểm thiếu sót cụ thể so với giáo trình/tài liệu chuẩn (`weaknesses`).
-- Đề xuất 2–3 gợi ý cải thiện để sinh viên đạt điểm tốt hơn (`improvements`).
+Nguyên tắc phân định trọng số khi chấm điểm:
+1. Ưu tiên cao nhất cho **Đáp án mẫu của giảng viên** và **Tiêu chí Rubric**: đây là chuẩn mực quyết định điểm số. Mọi ý trả lời khớp với Đáp án mẫu và đáp ứng mô tả trong Rubric đều phải được ghi nhận điểm đầy đủ.
+2. Sử dụng **RAG Context** làm nguồn dự phòng/bổ trợ: chỉ dùng để kiểm tra độ chính xác học thuật hoặc ghi nhận thêm điểm nếu sinh viên trình bày đúng kiến thức giáo trình theo cách diễn đạt mở rộng. Tuyệt đối không trừ điểm chỉ vì bài làm thiếu chi tiết phụ nằm ngoài Đáp án mẫu & Rubric, và không để đoạn RAG nhiễu làm sai lệch kết quả.
+3. Cho điểm từng tiêu chí trong danh sách `criteria` (giữ nguyên `criterion_id`, điểm `score` không vượt quá `max_score` của tiêu chí đó, chấp nhận điểm lẻ như 0.5, 1.25, 1.5). Trích dẫn nguyên văn câu nói của sinh viên vào `evidence` và liệt kê các ý thiếu/sai vào `missing_or_incorrect`.
+4. Nhận xét chi tiết (`summary`) về tính logic, độ chính xác kiến thức và cách diễn đạt.
+5. Chỉ ra tối đa 3 điểm mạnh cụ thể (`strengths`), tối đa 3 điểm yếu/thiếu sót (`weaknesses`) và 2–3 gợi ý cải thiện (`improvements`).
+6. Nếu câu trả lời quá mơ hồ hoặc có dấu hiệu mâu thuẫn giữa các nguồn cần giảng viên kiểm tra lại, hãy ghi rõ vào `uncertainty_notes` và đặt `needs_human_review = true`.
 
 BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON (không kèm bất kỳ lời dẫn nào) khớp với schema.
 """

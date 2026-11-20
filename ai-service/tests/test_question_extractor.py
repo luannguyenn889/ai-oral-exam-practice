@@ -17,6 +17,7 @@ os.environ["GEMINI_API_KEY"] = ""
 
 from app.config import settings  # noqa: E402
 from app.services.question_extractor_service import (  # noqa: E402
+    _clean_html_to_text,
     _items_to_questions,
     _read_document_blocks,
     _structure_parse,
@@ -169,6 +170,46 @@ def test_real_cnpm_docx() -> None:
     assert len(questions) == 27, f"Expected 27 questions, got {len(questions)}"
 
 
+def test_html_tags_stripped_to_plain_bullets() -> None:
+    """Kịch bản 7: Thẻ HTML (<ul><li>, <p>, <br>) trong file Excel/output AI phải được chuyển sang gạch đầu dòng thuần."""
+    raw_html = (
+        "Các nguyên lý cơ bản của Agile (từ Tuyên ngôn Agile) bao gồm:"
+        "<ul><li>Ưu tiên cao nhất là thỏa mãn khách hàng.</li>"
+        "<li>Chào đón các yêu cầu thay đổi.&nbsp;</li></ul>"
+    )
+    cleaned = _clean_html_to_text(raw_html)
+    assert "<ul>" not in cleaned and "<li>" not in cleaned and "&nbsp;" not in cleaned
+    assert cleaned == (
+        "Các nguyên lý cơ bản của Agile (từ Tuyên ngôn Agile) bao gồm:\n"
+        "- Ưu tiên cao nhất là thỏa mãn khách hàng.\n"
+        "- Chào đón các yêu cầu thay đổi."
+    )
+    # Bảo toàn biểu thức toán học có dấu < hoặc >
+    assert _clean_html_to_text("Độ phức tạp O(n) với n < 10 và x > 0.") == "Độ phức tạp O(n) với n < 10 và x > 0."
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Mã câu", "Chủ đề", "Nội dung câu hỏi", "Đáp án mẫu", "Tiêu chí"])
+    ws.append([
+        "Q1",
+        "Agile",
+        "<p>Trình bày các nguyên lý Agile?</p>",
+        raw_html,
+        "<ul><li>Nêu khái niệm (5đ)</li><li>Nêu 12 nguyên lý (5đ)</li></ul>",
+    ])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    res = extract_questions_from_file(buf.getvalue(), "html_content.xlsx")
+    assert res.total_detected == 1
+    q = res.questions[0]
+    assert "<" not in q.content
+    assert "<ul>" not in q.sample_answer and "<li>" not in q.sample_answer
+    assert "- Ưu tiên cao nhất là thỏa mãn khách hàng." in q.sample_answer
+    assert len(q.criteria) == 2
+    assert all("<li>" not in c.name for c in q.criteria)
+
+
 if __name__ == "__main__":
     test_phan3_freeform_with_rubric_and_table()
     test_word_auto_numbered_hierarchical_rubric()
@@ -176,4 +217,5 @@ if __name__ == "__main__":
     test_percentage_rubric_scores()
     test_excel_preserves_hyphenated_terms()
     test_real_cnpm_docx()
-    print(">>> ALL 6 REGRESSION TEST SUITES PASSED! <<<")
+    test_html_tags_stripped_to_plain_bullets()
+    print(">>> ALL 7 REGRESSION TEST SUITES PASSED! <<<")
