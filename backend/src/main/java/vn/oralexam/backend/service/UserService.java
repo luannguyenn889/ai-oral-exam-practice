@@ -5,13 +5,16 @@ import java.util.Collections;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
+import vn.oralexam.backend.DTO.request.ChangePasswordRequest;
 import vn.oralexam.backend.DTO.request.LoginRequest;
 import vn.oralexam.backend.DTO.request.RegisterRequest;
+import vn.oralexam.backend.DTO.request.UpdateProfileRequest;
 import vn.oralexam.backend.entity.User;
 import vn.oralexam.backend.repository.UserRepository;
 import vn.oralexam.backend.security.JwtTokenService;
@@ -165,11 +168,81 @@ public class UserService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public UserProfile getProfile(UUID userId) {
+        User user = findActiveUserById(userId);
+        return toUserProfile(user);
+    }
+
+    @Transactional
+    public UserProfile updateProfile(UUID userId, UpdateProfileRequest request) {
+        User user = findActiveUserById(userId);
+        user.setFullName(request.fullName().trim());
+        user.setAvatarUrl(trimToNull(request.avatarUrl()));
+        user.setStudentCode(trimToNull(request.studentCode()));
+        user.setDepartment(trimToNull(request.department()));
+        return toUserProfile(userRepository.saveAndFlush(user));
+    }
+
+    @Transactional
+    public boolean changePassword(UUID userId, ChangePasswordRequest request) {
+        if (request.newPassword().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Mật khẩu mới không được vượt quá 72 bytes UTF-8.");
+        }
+        User user = findActiveUserById(userId);
+        if (user.getPasswordHash() != null && !user.getPasswordHash().isBlank()) {
+            if (request.currentPassword() == null || request.currentPassword().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Vui lòng nhập mật khẩu hiện tại.");
+            }
+            if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Mật khẩu hiện tại không chính xác.");
+            }
+            if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Mật khẩu mới không được trùng với mật khẩu hiện tại.");
+            }
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.saveAndFlush(user);
+        return true;
+    }
+
+    private User findActiveUserById(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Không tìm thấy tài khoản người dùng."));
+        if (!user.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Tài khoản của bạn đã bị khóa.");
+        }
+        return user;
+    }
+
     private AuthResponse createAuthResponse(User user) {
         String token = jwtTokenService.createToken(user.getId(), user.getEmail(), user.getRoles());
         return AuthResponse.success(token, "Bearer", jwtTokenService.getExpirationSeconds(),
-                new UserProfile(user.getId().toString(), user.getEmail(), user.getFullName(),
-                        user.getAvatarUrl(), user.getRoles()));
+                toUserProfile(user));
+    }
+
+    private UserProfile toUserProfile(User user) {
+        return new UserProfile(
+                user.getId().toString(),
+                user.getEmail(),
+                user.getFullName(),
+                user.getAvatarUrl(),
+                user.getRoles(),
+                user.getStudentCode(),
+                user.getDepartment(),
+                user.getPasswordHash() != null && !user.getPasswordHash().isBlank());
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String normalizeEmail(String email) {
@@ -189,11 +262,19 @@ public class UserService {
 
         public static AuthResponse requireRoleSelection(String email, String fullName, String avatarUrl) {
             return new AuthResponse(null, null, 0,
-                    new UserProfile(null, email, fullName, avatarUrl, Collections.emptySet()),
+                    new UserProfile(null, email, fullName, avatarUrl, Collections.emptySet(), null, null, false),
                     true);
         }
     }
 
-    public record UserProfile(String id, String email, String fullName, String avatarUrl, Set<String> roles) { }
+    public record UserProfile(
+            String id,
+            String email,
+            String fullName,
+            String avatarUrl,
+            Set<String> roles,
+            String studentCode,
+            String department,
+            boolean hasPassword) { }
 }
 

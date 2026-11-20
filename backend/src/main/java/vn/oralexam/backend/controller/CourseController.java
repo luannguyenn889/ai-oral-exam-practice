@@ -16,8 +16,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import vn.oralexam.backend.DTO.request.SaveCourseRequest;
 import vn.oralexam.backend.DTO.response.CourseResponse;
 import vn.oralexam.backend.service.QuestionService;
@@ -33,15 +35,19 @@ public class CourseController {
     }
 
     /**
-     * Lấy danh sách tất cả môn học khả dụng kèm số lượng câu hỏi và chủ đề
+     * Lấy danh sách môn học khả dụng (hỗ trợ lọc riêng theo giảng viên tạo nếu mineOnly=true)
      */
     @GetMapping
-    public List<CourseResponse> getAllCourses() {
-        return questionService.getAllCourses();
+    public List<CourseResponse> getAllCourses(
+            @RequestParam(name = "mineOnly", defaultValue = "false") boolean mineOnly,
+            Authentication authentication
+    ) {
+        UUID ownerFilter = mineOnly ? requireUserId(authentication) : null;
+        return questionService.getAllCourses(ownerFilter);
     }
 
     /**
-     * Thêm mới một học phần / môn học
+     * Thêm mới một học phần / môn học (gắn với giảng viên đang đăng nhập)
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -49,12 +55,12 @@ public class CourseController {
             @Valid @RequestBody SaveCourseRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
-        return questionService.saveCourse(request, userId);
+        UUID userId = requireUserId(authentication);
+        return questionService.saveCourse(request, userId, hasAdminRole(authentication));
     }
 
     /**
-     * Cập nhật thông tin học phần
+     * Cập nhật thông tin học phần (chỉ chủ sở hữu hoặc Admin)
      */
     @PutMapping("/{id}")
     public CourseResponse updateCourse(
@@ -62,7 +68,7 @@ public class CourseController {
             @Valid @RequestBody SaveCourseRequest request,
             Authentication authentication
     ) {
-        UUID userId = extractUserId(authentication);
+        UUID userId = requireUserId(authentication);
         UUID resolvedId = questionService.resolveCourse(id).getId();
         SaveCourseRequest syncedRequest = new SaveCourseRequest(
                 resolvedId,
@@ -72,15 +78,19 @@ public class CourseController {
                 request.semester(),
                 request.department()
         );
-        return questionService.saveCourse(syncedRequest, userId);
+        return questionService.saveCourse(syncedRequest, userId, hasAdminRole(authentication));
     }
 
     /**
-     * Xóa mềm học phần, giải phóng mã học phần và dọn thư mục tài liệu RAG
+     * Xóa mềm học phần, giải phóng mã học phần và dọn thư mục tài liệu RAG (chỉ chủ sở hữu hoặc Admin)
      */
     @DeleteMapping("/{id}")
-    public Map<String, Object> deleteCourse(@PathVariable String id) {
-        questionService.deleteCourse(id);
+    public Map<String, Object> deleteCourse(
+            @PathVariable String id,
+            Authentication authentication
+    ) {
+        UUID userId = requireUserId(authentication);
+        questionService.deleteCourse(id, userId, hasAdminRole(authentication));
         return Map.of("success", true, "message", "Đã xóa học phần thành công.");
     }
 
@@ -89,13 +99,19 @@ public class CourseController {
         return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Yêu cầu không hợp lệ."));
     }
 
-    private UUID extractUserId(Authentication authentication) {
-        if (authentication != null && authentication.getName() != null) {
-            try {
-                return UUID.fromString(authentication.getName());
-            } catch (IllegalArgumentException ignored) {
-            }
+    private UUID requireUserId(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Bạn cần đăng nhập để thực hiện thao tác này.");
         }
-        return null;
+        try {
+            return UUID.fromString(authentication.getName());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Phiên đăng nhập không hợp lệ.");
+        }
+    }
+
+    private boolean hasAdminRole(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
     }
 }
