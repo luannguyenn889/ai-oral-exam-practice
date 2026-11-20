@@ -1,10 +1,16 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../../data-access/api/practice.api';
 import { Question, Rubric, RubricCriterion } from '../../../shared/models';
 import { ToastService } from '../../../core/services/toast.service';
+
+interface RubricDraft {
+  criteria: RubricCriterion[];
+  gradingInstructions: string;
+  savedAt: string;
+}
 
 @Component({
   selector: 'app-rubric-editor',
@@ -13,7 +19,7 @@ import { ToastService } from '../../../core/services/toast.service';
   templateUrl: './rubric-editor.component.html',
   styleUrl: './rubric-editor.component.css',
 })
-export class RubricEditorComponent implements OnInit {
+export class RubricEditorComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
@@ -26,7 +32,17 @@ export class RubricEditorComponent implements OnInit {
 
   criteria: RubricCriterion[] = [];
   gradingInstructions =
-    'Chấm điểm khách quan dựa trên tính chính xác của thuật ngữ, chiều sâu phân tích và tính ứng dụng thực tế.';
+    'Chấm điểm khách quan theo từng ý trong tiêu chí: ưu tiên độ chính xác của khái niệm và thuật ngữ chuyên môn, chiều sâu phân tích cơ chế và khả năng lấy ví dụ thực tế. Ghi rõ điểm mạnh và ý còn thiếu trong nhận xét.';
+
+  // Trạng thái lưu nháp tự động (Draft / Auto-save)
+  lastAutoSavedAt = '';
+  pendingDraft: RubricDraft | null = null;
+  pendingDraftTime = '';
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private get draftStorageKey(): string {
+    return `rubric_draft_${this.questionId}`;
+  }
 
   get currentTotalScore(): number {
     const sum = this.criteria.reduce((acc, c) => acc + (Number(c.maxScore) || 0), 0);
@@ -44,6 +60,13 @@ export class RubricEditorComponent implements OnInit {
     }
   }
 
+  ngOnDestroy(): void {
+    if (this.autoSaveTimer !== null) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
   loadData(id: string): void {
     this.loading = true;
     this.practiceApi.getQuestion(id).subscribe({
@@ -52,14 +75,100 @@ export class RubricEditorComponent implements OnInit {
         if (q.rubric && q.rubric.criteria && q.rubric.criteria.length > 0) {
           this.criteria = q.rubric.criteria.map((c) => ({ ...c }));
         } else {
-          this.applyDefault4CriteriaTemplate();
+          this.applyDefault4CriteriaTemplate(false);
         }
+        this.checkExistingDraft();
         this.loading = false;
       },
       error: () => {
         this.toastService.error('Không thể tải thông tin câu hỏi và Rubric.');
+        this.checkExistingDraft();
         this.loading = false;
       },
+    });
+  }
+
+  onRubricChange(): void {
+    if (!this.questionId || this.loading) return;
+    if (this.autoSaveTimer !== null) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveDraftNow();
+    }, 600);
+  }
+
+  private saveDraftNow(): void {
+    if (!this.questionId) return;
+    try {
+      const now = new Date();
+      const draft: RubricDraft = {
+        criteria: this.criteria.map((c) => ({ ...c })),
+        gradingInstructions: this.gradingInstructions,
+        savedAt: now.toISOString(),
+      };
+      localStorage.setItem(this.draftStorageKey, JSON.stringify(draft));
+      this.lastAutoSavedAt = this.formatTime(now);
+      this.pendingDraft = null;
+    } catch {
+      // Bỏ qua nếu trình duyệt chặn hoặc đầy localStorage
+    }
+  }
+
+  private checkExistingDraft(): void {
+    if (!this.questionId) return;
+    try {
+      const raw = localStorage.getItem(this.draftStorageKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as RubricDraft;
+      if (!draft || !Array.isArray(draft.criteria) || draft.criteria.length === 0) {
+        return;
+      }
+      const sameCriteria = JSON.stringify(draft.criteria) === JSON.stringify(this.criteria);
+      const sameInstructions =
+        (draft.gradingInstructions || '') === (this.gradingInstructions || '');
+      if (sameCriteria && sameInstructions) {
+        return;
+      }
+      this.pendingDraft = draft;
+      this.pendingDraftTime = draft.savedAt ? this.formatTime(new Date(draft.savedAt)) : '';
+    } catch {
+      this.pendingDraft = null;
+    }
+  }
+
+  restoreDraft(): void {
+    if (!this.pendingDraft) return;
+    this.criteria = this.pendingDraft.criteria.map((c) => ({ ...c }));
+    if (typeof this.pendingDraft.gradingInstructions === 'string') {
+      this.gradingInstructions = this.pendingDraft.gradingInstructions;
+    }
+    this.lastAutoSavedAt = this.pendingDraftTime;
+    this.pendingDraft = null;
+    this.toastService.success('Đã khôi phục bản nháp Rubric chưa lưu.');
+  }
+
+  discardDraft(): void {
+    this.pendingDraft = null;
+    this.clearDraft();
+    this.toastService.info('Đã bỏ bản nháp và giữ nguyên dữ liệu từ máy chủ.');
+  }
+
+  private clearDraft(): void {
+    if (!this.questionId) return;
+    try {
+      localStorage.removeItem(this.draftStorageKey);
+    } catch {
+      // ignore
+    }
+  }
+
+  private formatTime(date: Date): string {
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
   }
 
@@ -68,9 +177,11 @@ export class RubricEditorComponent implements OnInit {
     this.criteria.push({
       id: `c-new-${Date.now()}-${nextIndex}`,
       name: `Tiêu chí ${nextIndex}: Nội dung đánh giá`,
-      description: 'Mô tả cụ thể các ý cần đạt để AI đối chiếu và cho điểm...',
+      description:
+        'Nêu rõ các ý chính bắt buộc phải có và mức điểm từng phần (VD: Trình bày đúng khái niệm +1.0đ; giải thích được cơ chế +1.0đ).',
       maxScore: 2.0,
     });
+    this.onRubricChange();
   }
 
   removeCriterion(index: number): void {
@@ -79,6 +190,7 @@ export class RubricEditorComponent implements OnInit {
       return;
     }
     this.criteria.splice(index, 1);
+    this.onRubricChange();
   }
 
   moveUp(index: number): void {
@@ -86,6 +198,7 @@ export class RubricEditorComponent implements OnInit {
       const temp = this.criteria[index];
       this.criteria[index] = this.criteria[index - 1];
       this.criteria[index - 1] = temp;
+      this.onRubricChange();
     }
   }
 
@@ -94,66 +207,71 @@ export class RubricEditorComponent implements OnInit {
       const temp = this.criteria[index];
       this.criteria[index] = this.criteria[index + 1];
       this.criteria[index + 1] = temp;
+      this.onRubricChange();
     }
   }
 
-  applyDefault4CriteriaTemplate(): void {
+  applyDefault4CriteriaTemplate(triggerAutoSave = true): void {
     this.criteria = [
       {
         id: 'c1',
         name: 'Khái niệm & Kiến thức cốt lõi',
         description:
-          'Trình bày chính xác và đầy đủ các định nghĩa, thuật ngữ chuyên môn trọng tâm.',
+          'Nêu đúng và đầy đủ định nghĩa, bản chất và các thuật ngữ chuyên môn trọng tâm của câu hỏi.',
         maxScore: 3.0,
       },
       {
         id: 'c2',
-        name: 'Phân tích & So sánh chuyên sâu',
+        name: 'Phân tích cơ chế & So sánh chuyên sâu',
         description:
-          'Phân tích rõ cơ chế hoạt động, sự khác biệt và ưu nhược điểm liên quan.',
+          'Giải thích rõ nguyên lý hoạt động, phân biệt được sự khác nhau hoặc ưu/nhược điểm giữa các khái niệm liên quan.',
         maxScore: 3.0,
       },
       {
         id: 'c3',
-        name: 'Ví dụ thực tế & Tính ứng dụng',
+        name: 'Ví dụ thực tế & Khả năng vận dụng',
         description:
-          'Đưa ra được ví dụ mã nguồn hoặc tình huống thực tế minh họa đúng bản chất.',
+          'Đưa ra được ví dụ cụ thể (tình huống dự án hoặc đoạn mã minh họa) gắn đúng với lý thuyết đã nêu.',
         maxScore: 2.5,
       },
       {
         id: 'c4',
-        name: 'Phản xạ & Kỹ năng trình bày',
+        name: 'Diễn đạt mạch lạc & Thuật ngữ chuẩn',
         description:
-          'Diễn đạt mạch lạc, phản xạ tự tin, dùng thuật ngữ chuyên ngành chuẩn xác.',
+          'Trình bày có cấu trúc rõ ràng, trả lời đúng trọng tâm và sử dụng chính xác thuật ngữ chuyên ngành.',
         maxScore: 1.5,
       },
     ];
+    if (triggerAutoSave) {
+      this.onRubricChange();
+    }
   }
 
   apply3CriteriaTemplate(): void {
     this.criteria = [
       {
         id: 'c1',
-        name: 'Độ chính xác nội dung & Lý thuyết',
+        name: 'Độ chính xác lý thuyết & Trọng tâm',
         description:
-          'Nắm vững lý thuyết trọng tâm, trả lời đúng trọng tâm câu hỏi mà không lan man.',
+          'Trình bày đúng bản chất kiến thức cốt lõi, trả lời trực diện vào trọng tâm câu hỏi.',
         maxScore: 4.0,
       },
       {
         id: 'c2',
-        name: 'Minh họa & Khả năng vận dụng',
+        name: 'Phân tích & Ví dụ vận dụng thực tế',
         description:
-          'Lấy được ví dụ cụ thể, giải thích được cách giải quyết vấn đề trong dự án.',
+          'Giải thích được cách áp dụng vào bài toán/dự án thực tế và nêu ví dụ minh họa hợp lý.',
         maxScore: 3.5,
       },
       {
         id: 'c3',
-        name: 'Khả năng diễn đạt & Thuật ngữ',
+        name: 'Cấu trúc trình bày & Thuật ngữ',
         description:
-          'Trình bày rõ ràng, phát âm chính xác thuật ngữ công nghệ, tự tin.',
+          'Diễn đạt rõ ràng, mạch lạc, dùng đúng thuật ngữ chuyên môn và phản xạ tự tin.',
         maxScore: 2.5,
       },
     ];
+    this.onRubricChange();
   }
 
   saveRubric(): void {
@@ -191,6 +309,7 @@ export class RubricEditorComponent implements OnInit {
     this.practiceApi.saveRubric(this.questionId, rubricPayload).subscribe({
       next: () => {
         this.saving = false;
+        this.clearDraft();
         this.toastService.success('Lưu Rubric chấm điểm thành công!');
         this.router.navigate(['/instructor/questions'], {
           queryParams: { courseId: this.question?.courseId },

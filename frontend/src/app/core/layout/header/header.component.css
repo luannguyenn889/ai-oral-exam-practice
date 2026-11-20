@@ -54,6 +54,17 @@
   text-align: right;
 }
 
+.app-header__identity--link {
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  transition: background-color 150ms ease;
+}
+
+.app-header__identity--link:hover {
+  background: var(--color-bg);
+}
+
 .app-header__name {
   color: var(--color-text);
   font-size: var(--text-sm);

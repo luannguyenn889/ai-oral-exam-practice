@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../../data-access/api/practice.api';
 import { Course, Question } from '../../../shared/models';
 import { ToastService } from '../../../core/services/toast.service';
+import { AuthService } from '../../../core/auth/auth.service';
+import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
 
 @Component({
   selector: 'app-question-editor',
@@ -18,6 +20,7 @@ export class QuestionEditorComponent implements OnInit {
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
   private toastService = inject(ToastService);
+  private authService = inject(AuthService);
 
   isEditMode = false;
   questionId: string | null = null;
@@ -52,7 +55,8 @@ export class QuestionEditorComponent implements OnInit {
   }
 
   loadCourses(): void {
-    this.practiceApi.getCourses().subscribe({
+    const isAdmin = this.authService.getRole() === 'admin';
+    this.practiceApi.getCourses(!isAdmin).subscribe({
       next: (data) => {
         this.courses = data;
         if (!this.courseId && this.courses.length > 0) {
@@ -71,9 +75,9 @@ export class QuestionEditorComponent implements OnInit {
       next: (q) => {
         this.courseId = q.courseId;
         this.topic = q.topic || '';
-        this.title = q.title;
-        this.content = q.content;
-        this.sampleAnswer = q.sampleAnswer || '';
+        this.title = cleanHtmlToPlainText(q.title);
+        this.content = cleanHtmlToPlainText(q.content);
+        this.sampleAnswer = cleanHtmlToPlainText(q.sampleAnswer);
         this.difficulty = q.difficulty || 'medium';
         this.timeLimitMinutes = q.timeLimitSeconds ? Math.round(q.timeLimitSeconds / 60) : 3;
         this.tagsString = q.tags ? q.tags.join(', ') : '';

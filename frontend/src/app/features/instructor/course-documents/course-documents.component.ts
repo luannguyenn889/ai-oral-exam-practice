@@ -1,12 +1,16 @@
-import { Component, inject, OnInit, NgZone } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { AiRagService } from '../../../core/services/ai-rag.service';
+import {
+  AiRagService,
+  ChunkingStrategyOption,
+  EmbeddingProviderOption,
+} from '../../../core/services/ai-rag.service';
 import { PracticeApi } from '../../../data-access/api/practice.api';
 import { ToastService } from '../../../core/services/toast.service';
+import { AuthService } from '../../../core/auth/auth.service';
 import { Course, RagStatus, RagChunkResult } from '../../../shared/models';
 import { SkeletonComponent } from '../../../shared/components/skeleton/skeleton.component';
 import { ErrorStateComponent } from '../../../shared/components/error-state/error-state.component';
@@ -16,6 +20,16 @@ import { environment } from '../../../../environments/environment';
 declare const google: any;
 declare const gapi: any;
 
+export type StagedFileStatus = 'pending' | 'uploading' | 'processing' | 'done' | 'error';
+
+export interface StagedUploadItem {
+  file: File;
+  status: StagedFileStatus;
+  uploadPercent: number;
+  addedChunks?: number;
+  errorMessage?: string;
+}
+
 @Component({
   selector: 'app-course-documents',
   standalone: true,
@@ -23,7 +37,7 @@ declare const gapi: any;
   templateUrl: './course-documents.component.html',
   styleUrl: './course-documents.component.css',
 })
-export class CourseDocumentsComponent implements OnInit {
+export class CourseDocumentsComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private aiRagService = inject(AiRagService);
@@ -31,6 +45,7 @@ export class CourseDocumentsComponent implements OnInit {
   private toast = inject(ToastService);
   private http = inject(HttpClient);
   private ngZone = inject(NgZone);
+  private authService = inject(AuthService);
 
   courseId = '';
   courses: Course[] = [];
@@ -39,9 +54,15 @@ export class CourseDocumentsComponent implements OnInit {
   error: string | null = null;
   ragStatus: RagStatus | null = null;
   isSyncing = false;
-  stagedFiles: File[] = [];
+  syncElapsedSeconds = 0;
+  private syncTimerId: ReturnType<typeof setInterval> | null = null;
+  stagedFiles: StagedUploadItem[] = [];
   uploadingProgressText = '';
   isUploadingLocal = false;
+  activeUploadPhase: 'uploading' | 'processing' = 'uploading';
+  activeUploadPercent = 0;
+  uploadElapsedSeconds = 0;
+  private uploadTimerId: ReturnType<typeof setInterval> | null = null;
   isDragging = false;
   googleAccessToken: string | null = null;
 
@@ -53,6 +74,8 @@ export class CourseDocumentsComponent implements OnInit {
   deletingFile: string | null = null;
 
   // Test Search state
+  embeddingProvider: EmbeddingProviderOption = 'local';
+  chunkingStrategy: ChunkingStrategyOption = 'recursive';
   searchQuery = 'Dạ thưa thầy...';
   searchMode: 'hybrid' | 'dense' | 'bm25' = 'hybrid';
   topK = 3;
@@ -78,7 +101,13 @@ export class CourseDocumentsComponent implements OnInit {
     });
   }
 
+  ngOnDestroy(): void {
+    this.stopUploadTimer();
+    this.stopSyncTimer();
+  }
+
   onCourseSelect(courseCode: string): void {
+    if (this.isUploadingLocal) return;
     const trimmed = (courseCode || '').trim();
     if (!trimmed) {
       this.router.navigate(['/instructor/documents']);
@@ -90,7 +119,8 @@ export class CourseDocumentsComponent implements OnInit {
   loadCourseInfoAndRag(): void {
     this.loading = true;
     this.error = null;
-    this.practiceApi.getCourses().subscribe({
+    const isAdmin = this.authService.getRole() === 'admin';
+    this.practiceApi.getCourses(!isAdmin).subscribe({
       next: (courses) => {
         this.courses = courses || [];
         if (!this.courseId) {
@@ -129,15 +159,38 @@ export class CourseDocumentsComponent implements OnInit {
     });
   }
 
-  loadRagStatus(): void {
+  onEmbeddingProviderChange(): void {
+    if (this.isUploadingLocal) return;
+    this.searchResults = [];
+    this.cleanedQuery = '';
+    if (this.ragCourseCode) {
+      this.loadRagStatus(true);
+    }
+  }
+
+  onChunkingStrategyChange(): void {
+    if (this.isUploadingLocal) return;
+    const labels: Record<ChunkingStrategyOption, string> = {
+      recursive: 'Recursive theo tiêu đề & câu (Mặc định)',
+      semantic: 'Semantic theo ngữ nghĩa (Embedding)',
+      legacy: 'Boundary 600 ký tự (Cách cũ)',
+    };
+    this.toast.info(
+      `Đã chọn chiến lược cắt đoạn: ${labels[this.chunkingStrategy]}. Bấm "Đồng bộ chỉ mục Server" nếu muốn lập chỉ mục lại các file hiện có.`,
+    );
+  }
+
+  loadRagStatus(silent = false): void {
     if (!this.ragCourseCode) {
       this.ragStatus = null;
       this.loading = false;
       return;
     }
-    this.loading = true;
+    if (!silent || !this.ragStatus) {
+      this.loading = true;
+    }
     this.error = null;
-    this.aiRagService.getRagStatus(this.ragCourseCode).subscribe({
+    this.aiRagService.getRagStatus(this.ragCourseCode, this.embeddingProvider).subscribe({
       next: (status) => { this.ragStatus = status; this.loading = false; },
       error: () => { this.error = 'Chưa kết nối được với AI Service.'; this.loading = false; },
     });
@@ -289,6 +342,7 @@ export class CourseDocumentsComponent implements OnInit {
   }
 
   addFilesToStage(fileList: FileList | File[]): void {
+    if (this.isUploadingLocal) return;
     const files = Array.from(fileList);
     let addedCount = 0;
     let invalidCount = 0;
@@ -304,11 +358,16 @@ export class CourseDocumentsComponent implements OnInit {
         continue;
       }
 
-      const existingIndex = this.stagedFiles.findIndex((f) => f.name === file.name);
+      const newItem: StagedUploadItem = {
+        file,
+        status: 'pending',
+        uploadPercent: 0,
+      };
+      const existingIndex = this.stagedFiles.findIndex((item) => item.file.name === file.name);
       if (existingIndex !== -1) {
-        this.stagedFiles[existingIndex] = file;
+        this.stagedFiles[existingIndex] = newItem;
       } else {
-        this.stagedFiles = [...this.stagedFiles, file];
+        this.stagedFiles = [...this.stagedFiles, newItem];
       }
       addedCount++;
     }
@@ -335,6 +394,38 @@ export class CourseDocumentsComponent implements OnInit {
     this.stagedFiles = [];
   }
 
+  get pendingOrErrorCount(): number {
+    return this.stagedFiles.filter((i) => i.status === 'pending' || i.status === 'error').length;
+  }
+
+  get hasLargeOrSlowModelNotice(): boolean {
+    const hasLargeFile = this.stagedFiles.some(
+      (i) => (i.status === 'pending' || i.status === 'uploading' || i.status === 'processing') && i.file.size > 5 * 1024 * 1024,
+    );
+    return hasLargeFile || this.embeddingProvider === 'e5-small' || this.embeddingProvider === 'local';
+  }
+
+  formatElapsed(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  private startUploadTimer(): void {
+    this.stopUploadTimer();
+    this.uploadElapsedSeconds = 0;
+    this.uploadTimerId = setInterval(() => {
+      this.uploadElapsedSeconds += 1;
+    }, 1000);
+  }
+
+  private stopUploadTimer(): void {
+    if (this.uploadTimerId !== null) {
+      clearInterval(this.uploadTimerId);
+      this.uploadTimerId = null;
+    }
+  }
+
   formatFileSize(bytes: number): string {
     if (!bytes || bytes < 1024) return `${bytes || 0} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -342,36 +433,75 @@ export class CourseDocumentsComponent implements OnInit {
   }
 
   async processStagedFiles(): Promise<void> {
-    if (this.isUploadingLocal || this.stagedFiles.length === 0) return;
+    if (this.isUploadingLocal || this.pendingOrErrorCount === 0) return;
+
+    const itemsToUpload = this.stagedFiles.filter(
+      (item) => item.status === 'pending' || item.status === 'error',
+    );
+    const total = itemsToUpload.length;
 
     this.isUploadingLocal = true;
-    const filesToUpload = [...this.stagedFiles];
-    const total = filesToUpload.length;
+    this.activeUploadPhase = 'uploading';
+    this.activeUploadPercent = 0;
+    this.startUploadTimer();
+
     let uploadedCount = 0;
     let totalNewChunks = 0;
     let hadError = false;
 
-    for (let i = 0; i < total; i++) {
-      const file = filesToUpload[i];
-      this.uploadingProgressText = `Đang tải lên & lập chỉ mục (${i + 1}/${total}): ${file.name}`;
-      try {
-        const res = await firstValueFrom(
-          this.aiRagService.uploadCourseDocument(this.ragCourseCode, file, false),
-        );
-        uploadedCount++;
-        totalNewChunks += res.addedOrUpdatedChunks || 0;
-        this.stagedFiles = this.stagedFiles.filter((f) => f !== file);
-        if (this.previewingFile === file.name) {
-          this.openFilePreview(file.name);
-        }
-      } catch (err: any) {
-        hadError = true;
-        this.toast.error(err?.error?.detail || `Lỗi khi tải lên tệp "${file.name}".`);
-      }
-    }
+    try {
+      for (let i = 0; i < total; i++) {
+        const item = itemsToUpload[i];
+        item.status = 'uploading';
+        item.uploadPercent = 0;
+        item.errorMessage = undefined;
+        this.activeUploadPhase = 'uploading';
+        this.activeUploadPercent = 0;
+        this.uploadingProgressText = `Đang xử lý (${i + 1}/${total}): ${item.file.name}`;
 
-    this.isUploadingLocal = false;
-    this.uploadingProgressText = '';
+        try {
+          await new Promise<void>((resolve, reject) => {
+            this.aiRagService
+              .uploadCourseDocumentWithProgress(
+                this.ragCourseCode,
+                item.file,
+                false,
+                this.embeddingProvider,
+                this.chunkingStrategy,
+              )
+              .subscribe({
+                next: (ev) => {
+                  this.activeUploadPhase = ev.phase === 'done' ? 'processing' : ev.phase;
+                  this.activeUploadPercent = ev.uploadPercent;
+                  item.uploadPercent = ev.uploadPercent;
+                  if (ev.phase === 'done' && ev.result) {
+                    item.status = 'done';
+                    item.addedChunks = ev.result.addedOrUpdatedChunks || 0;
+                    uploadedCount++;
+                    totalNewChunks += ev.result.addedOrUpdatedChunks || 0;
+                    if (this.previewingFile === item.file.name) {
+                      this.openFilePreview(item.file.name);
+                    }
+                  } else {
+                    item.status = ev.phase;
+                  }
+                },
+                error: (err) => reject(err),
+                complete: () => resolve(),
+              });
+          });
+        } catch (err: any) {
+          hadError = true;
+          item.status = 'error';
+          item.errorMessage = err?.error?.detail || `Lỗi khi tải lên tệp "${item.file.name}".`;
+          this.toast.error(item.errorMessage!);
+        }
+      }
+    } finally {
+      this.stopUploadTimer();
+      this.isUploadingLocal = false;
+      this.uploadingProgressText = '';
+    }
 
     if (uploadedCount > 0) {
       this.toast.success(
@@ -452,22 +582,56 @@ export class CourseDocumentsComponent implements OnInit {
     });
   }
 
+  get chunkingStrategyLabel(): string {
+    const labels: Record<ChunkingStrategyOption, string> = {
+      recursive: 'Recursive tiêu đề & câu',
+      semantic: 'Semantic theo ngữ nghĩa',
+      legacy: 'Boundary 600 ký tự (cách cũ)',
+    };
+    return labels[this.chunkingStrategy];
+  }
+
+  private startSyncTimer(): void {
+    this.stopSyncTimer();
+    this.syncElapsedSeconds = 0;
+    this.syncTimerId = setInterval(() => {
+      this.syncElapsedSeconds += 1;
+    }, 1000);
+  }
+
+  private stopSyncTimer(): void {
+    if (this.syncTimerId !== null) {
+      clearInterval(this.syncTimerId);
+      this.syncTimerId = null;
+    }
+  }
+
   syncRagIndex(forceReindex = false): void {
     if (this.isSyncing) return;
     this.isSyncing = true;
-    this.aiRagService.indexCourseDocuments(this.ragCourseCode, forceReindex).subscribe({
-      next: (res) => {
-        this.isSyncing = false;
-        this.toast.success(
-          `Đã đồng bộ chỉ mục RAG (${res.totalChunks} đoạn từ ${res.totalFiles} tài liệu).`,
-        );
-        this.loadRagStatus();
-      },
-      error: () => {
-        this.isSyncing = false;
-        this.toast.error('Lỗi khi đồng bộ chỉ mục RAG tại Server.');
-      },
-    });
+    this.startSyncTimer();
+    this.aiRagService
+      .indexCourseDocuments(
+        this.ragCourseCode,
+        forceReindex,
+        this.embeddingProvider,
+        this.chunkingStrategy,
+      )
+      .subscribe({
+        next: (res) => {
+          this.stopSyncTimer();
+          this.isSyncing = false;
+          this.toast.success(
+            `Đã đồng bộ chỉ mục RAG (${res.totalChunks} đoạn từ ${res.totalFiles} tài liệu, chế độ: ${res.chunkingStrategy || this.chunkingStrategy}).`,
+          );
+          this.loadRagStatus();
+        },
+        error: () => {
+          this.stopSyncTimer();
+          this.isSyncing = false;
+          this.toast.error('Lỗi khi đồng bộ chỉ mục RAG tại Server.');
+        },
+      });
   }
 
   toggleShowResults(): void {
@@ -481,7 +645,8 @@ export class CourseDocumentsComponent implements OnInit {
       courseId: this.ragCourseCode,
       queryText: this.searchQuery,
       topK: this.topK,
-      searchMode: this.searchMode
+      searchMode: this.searchMode,
+      embeddingProvider: this.embeddingProvider,
     }).subscribe({
       next: (res) => {
         this.searching = false;

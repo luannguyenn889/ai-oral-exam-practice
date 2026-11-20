@@ -20,8 +20,9 @@ export class HttpPracticeApi extends PracticeApi {
   private http = inject(HttpClient);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  override getCourses(): Observable<Course[]> {
-    return this.http.get<Course[]>(`${this.baseUrl}/courses`);
+  override getCourses(mineOnly = false): Observable<Course[]> {
+    const query = mineOnly ? '?mineOnly=true' : '';
+    return this.http.get<Course[]>(`${this.baseUrl}/courses${query}`);
   }
 
   override getQuestions(courseId?: string): Observable<Question[]> {

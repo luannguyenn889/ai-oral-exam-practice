@@ -10,7 +10,7 @@ import {
 } from '../../shared/models';
 
 export abstract class PracticeApi {
-  abstract getCourses(): Observable<Course[]>;
+  abstract getCourses(mineOnly?: boolean): Observable<Course[]>;
   abstract getQuestions(courseId?: string): Observable<Question[]>;
   abstract getQuestion(questionId: string): Observable<Question>;
   abstract createPracticeSession(questionId: string): Observable<PracticeSession>;

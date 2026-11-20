@@ -8,6 +8,7 @@ import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.com
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { ErrorStateComponent } from '../../shared/components/error-state/error-state.component';
 import { ToastService } from '../../core/services/toast.service';
+import { AuthService } from '../../core/auth/auth.service';
 
 @Component({
   selector: 'app-course-selection',
@@ -27,11 +28,13 @@ export class CourseSelectionComponent implements OnInit {
   private practiceApi = inject(PracticeApi);
   private router = inject(Router);
   private toastService = inject(ToastService);
+  private authService = inject(AuthService);
 
   loading = true;
   error: string | null = null;
   courses: Course[] = [];
   searchQuery = '';
+  onlyMyCourses = false;
 
   // Quản lý Modal Thêm mới / Chỉnh sửa học phần (dành cho giảng viên)
   showCourseModal = false;
@@ -59,10 +62,45 @@ export class CourseSelectionComponent implements OnInit {
     return cleaned || 'IT4010';
   }
 
+  get currentUserId(): string | null {
+    return this.authService.getCurrentUser()?.id ?? null;
+  }
+
+  get isAdmin(): boolean {
+    return this.authService.getRole() === 'admin';
+  }
+
+  get myCoursesCount(): number {
+    const uid = this.currentUserId;
+    if (!uid) return 0;
+    return this.courses.filter((c) => c.createdBy === uid).length;
+  }
+
+  canManageCourse(course: Course): boolean {
+    if (!this.isInstructorMode) return false;
+    if (this.isAdmin) return true;
+    const uid = this.currentUserId;
+    return !!uid && course.createdBy === uid;
+  }
+
+  setCourseScope(onlyMine: boolean): void {
+    if (!this.isAdmin) {
+      this.onlyMyCourses = true;
+      return;
+    }
+    this.onlyMyCourses = onlyMine;
+  }
+
   get filteredCourses(): Course[] {
+    let list = this.courses;
+    if (this.isInstructorMode && (!this.isAdmin || this.onlyMyCourses)) {
+      const uid = this.currentUserId;
+      list = uid ? list.filter((c) => c.createdBy === uid) : [];
+    }
+
     const q = this.searchQuery.trim().toLowerCase();
-    if (!q) return this.courses;
-    return this.courses.filter(
+    if (!q) return list;
+    return list.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.code.toLowerCase().includes(q) ||
@@ -75,10 +113,17 @@ export class CourseSelectionComponent implements OnInit {
     if (this.searchQuery) {
       return `Không có học phần nào khớp với từ khóa "${this.searchQuery}". Hãy thử tìm kiếm bằng từ khóa khác.`;
     }
+    if (this.isInstructorMode && !this.isAdmin) {
+      return 'Bạn chưa tạo học phần nào. Hãy bấm "Thêm học phần mới" để bắt đầu.';
+    }
+    if (this.isInstructorMode && this.onlyMyCourses) {
+      return 'Bạn chưa tạo học phần nào. Hãy bấm "Thêm học phần mới" hoặc chuyển sang xem "Tất cả".';
+    }
     return 'Hiện tại hệ thống chưa cập nhật danh sách học phần nào.';
   }
 
   ngOnInit(): void {
+    this.onlyMyCourses = this.isInstructorMode && !this.isAdmin;
     this.loadCourses();
   }
 
@@ -118,6 +163,10 @@ export class CourseSelectionComponent implements OnInit {
   }
 
   openEditModal(course: Course): void {
+    if (!this.canManageCourse(course)) {
+      this.toastService.warning('Bạn không có quyền chỉnh sửa học phần do giảng viên khác tạo.');
+      return;
+    }
     this.editingCourse = course;
     this.formCourseCode = course.code;
     this.formCourseName = course.name;
@@ -187,6 +236,10 @@ export class CourseSelectionComponent implements OnInit {
   }
 
   openDeleteModal(course: Course): void {
+    if (!this.canManageCourse(course)) {
+      this.toastService.warning('Bạn không có quyền xóa học phần do giảng viên khác tạo.');
+      return;
+    }
     this.deletingCourse = course;
   }
 

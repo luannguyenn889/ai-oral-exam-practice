@@ -11,12 +11,40 @@
         class="course-switcher-select"
         [ngModel]="course?.code || courseId"
         (ngModelChange)="onCourseSelect($event)"
+        [disabled]="isUploadingLocal"
+        [title]="isUploadingLocal ? 'Đang nạp tài liệu, vui lòng chờ hoàn tất' : 'Chọn học phần quản lý kho tài liệu'"
         aria-label="Chọn học phần quản lý kho tài liệu"
       >
         <option value="">-- Chọn học phần --</option>
         @for (c of courses; track c.id) {
           <option [value]="c.code">{{ c.code }} — {{ c.name }}</option>
         }
+      </select>
+
+      <select
+        class="course-switcher-select"
+        [(ngModel)]="embeddingProvider"
+        (ngModelChange)="onEmbeddingProviderChange()"
+        [disabled]="isUploadingLocal"
+        [title]="isUploadingLocal ? 'Đang nạp tài liệu, không thể đổi model lúc này' : 'Chọn mô hình Embedding để lập chỉ mục và tìm kiếm thử'"
+        aria-label="Chọn mô hình Embedding thử nghiệm"
+      >
+        <option value="local">Embedding: MiniLM-L12-v2 (Mặc định)</option>
+        <option value="e5-small">Embedding: multilingual-e5-small (512 tokens)</option>
+        <option value="gemini">Embedding: Gemini Embedding 2</option>
+      </select>
+
+      <select
+        class="course-switcher-select"
+        [(ngModel)]="chunkingStrategy"
+        (ngModelChange)="onChunkingStrategyChange()"
+        [disabled]="isUploadingLocal || isSyncing"
+        [title]="isUploadingLocal || isSyncing ? 'Đang xử lý tài liệu' : 'Chọn phương pháp chia đoạn (Chunking) khi nạp/đồng bộ giáo trình'"
+        aria-label="Chọn chiến lược chia đoạn tài liệu"
+      >
+        <option value="recursive">Chunking: Recursive tiêu đề &amp; câu (Mặc định)</option>
+        <option value="semantic">Chunking: Semantic theo ngữ nghĩa (Embedding)</option>
+        <option value="legacy">Chunking: Boundary 600 ký tự (Cách cũ)</option>
       </select>
 
       @if (ragCourseCode) {
@@ -51,12 +79,12 @@
           <button
             type="button"
             class="btn btn--secondary"
-            (click)="syncRagIndex(false)"
+            (click)="syncRagIndex(true)"
             [disabled]="isSyncing || isUploadingLocal"
-            title="Quét lại thư mục tài liệu trên Server để cập nhật chỉ mục RAG"
+            title="Quét và lập chỉ mục lại toàn bộ tài liệu trên Server theo cấu hình hiện tại"
           >
-            <span class="material-symbols-outlined">sync</span>
-            Đồng bộ chỉ mục Server
+            <span class="material-symbols-outlined" [class.spin]="isSyncing">sync</span>
+            {{ isSyncing ? 'Đang đồng bộ (' + formatElapsed(syncElapsedSeconds) + ')...' : 'Đồng bộ chỉ mục Server' }}
           </button>
           <button class="btn btn--primary" (click)="connectGoogleDrive()" [disabled]="googleAccessToken !== null">
             <span class="material-symbols-outlined">link</span>
@@ -66,6 +94,29 @@
       }
     </div>
   </header>
+
+  @if (isSyncing) {
+    <div class="rag-sync-banner" role="status" aria-live="polite">
+      <div class="rag-sync-banner__row">
+        <div class="rag-sync-banner__left">
+          <span class="material-symbols-outlined spin">progress_activity</span>
+          <div>
+            <strong>Đang đồng bộ &amp; lập chỉ mục lại kho RAG ({{ ragCourseCode }})...</strong>
+            <div class="rag-sync-banner__sub">
+              Chiến lược: <b>{{ chunkingStrategyLabel }}</b> · Embedding: <b>{{ embeddingProvider }}</b>
+              @if (chunkingStrategy === 'semantic') {
+                · Đang tách câu và tính độ tương đồng ngữ nghĩa...
+              }
+            </div>
+          </div>
+        </div>
+        <span class="rag-sync-banner__timer">{{ formatElapsed(syncElapsedSeconds) }}</span>
+      </div>
+      <div class="rag-sync-banner__bar">
+        <div class="rag-sync-banner__bar-fill"></div>
+      </div>
+    </div>
+  }
 
   @if (loading) {
   <div class="rag-stats-grid">
@@ -138,19 +189,6 @@
         <div class="stat-card__value">{{ ragStatus.totalChunks }} đoạn</div>
       </div>
     </div>
-
-    <div class="stat-card">
-      <div class="stat-card__icon stat-card__icon--info">
-        <span class="material-symbols-outlined">hub</span>
-      </div>
-      <div>
-        <div class="stat-card__label">Chế độ tìm kiếm & Embedding</div>
-        <div class="stat-card__meta">
-          {{ ragStatus.hybridBm25Active ? 'Hybrid (Dense + BM25 + RRF)' : 'Dense Vector' }}
-        </div>
-        <div class="stat-card__sub">{{ ragStatus.embeddingModel }}</div>
-      </div>
-    </div>
   </div>
 
   <!-- KHU VỰC 2: UPLOAD TRỰC TIẾP TẠI SERVER + GOOGLE DRIVE (SONG SONG) -->
@@ -184,7 +222,12 @@
         (dragleave)="onDragLeave($event)"
         (drop)="onDrop($event)"
       >
-        <span class="material-symbols-outlined upload-dropzone__icon">cloud_upload</span>
+        <span
+          class="material-symbols-outlined upload-dropzone__icon"
+          [class.spin]="isUploadingLocal"
+        >
+          {{ isUploadingLocal ? 'progress_activity' : 'cloud_upload' }}
+        </span>
         <div class="upload-dropzone__title">
           {{
             isUploadingLocal
@@ -192,9 +235,47 @@
               : 'Kéo thả tài liệu vào đây hoặc bấm để chọn từ máy tính'
           }}
         </div>
-        <div class="upload-dropzone__hint">
-          Hỗ trợ PDF, Word (.docx), Text (.txt) — Chọn tệp vào danh sách chờ, kiểm tra rồi bấm Xử lý
-        </div>
+
+        @if (isUploadingLocal) {
+          <div class="upload-progress">
+            <div class="upload-progress__meta">
+              <span class="upload-progress__phase">
+                {{
+                  activeUploadPhase === 'uploading'
+                    ? 'Pha 1/2: Đang tải tệp lên Server (' + activeUploadPercent + '%)'
+                    : 'Pha 2/2: Đã tải xong 100% — AI Service đang tách chữ & tạo vector RAG...'
+                }}
+              </span>
+              <span class="upload-timer-badge">
+                <span class="material-symbols-outlined">timer</span>
+                {{ formatElapsed(uploadElapsedSeconds) }}
+              </span>
+            </div>
+            <div class="upload-progress__track">
+              @if (activeUploadPhase === 'uploading') {
+                <div
+                  class="upload-progress__bar"
+                  [style.width.%]="activeUploadPercent"
+                ></div>
+              } @else {
+                <div class="upload-progress__bar upload-progress__bar--indeterminate"></div>
+              }
+            </div>
+          </div>
+
+          @if (hasLargeOrSlowModelNotice) {
+            <div class="upload-notice-banner">
+              <span class="material-symbols-outlined">info</span>
+              <span>
+                Giáo trình dung lượng lớn hoặc lần đầu khởi tạo model local/e5-small (~470 MB) có thể mất 1–3 phút để tách văn bản và tính vector. Vui lòng giữ tab này mở.
+              </span>
+            </div>
+          }
+        } @else {
+          <div class="upload-dropzone__hint">
+            Hỗ trợ PDF, Word (.docx), Text (.txt) — Chọn tệp vào danh sách chờ, kiểm tra rồi bấm Xử lý
+          </div>
+        }
       </div>
 
       @if (stagedFiles.length > 0) {
@@ -216,23 +297,61 @@
         </div>
 
         <ul class="staged-files-list">
-          @for (file of stagedFiles; track file.name + '-' + $index; let i = $index) {
-          <li class="staged-file-item">
+          @for (item of stagedFiles; track item.file.name + '-' + $index; let i = $index) {
+          <li class="staged-file-item" [class.staged-file-item--active]="item.status === 'uploading' || item.status === 'processing'">
             <div class="staged-file-item__info">
               <span class="material-symbols-outlined staged-file-item__icon">description</span>
-              <span class="staged-file-item__name" [title]="file.name">{{ file.name }}</span>
-              <span class="staged-file-item__size">{{ formatFileSize(file.size) }}</span>
+              <div class="staged-file-item__text">
+                <span class="staged-file-item__name" [title]="item.file.name">{{ item.file.name }}</span>
+                @if (item.status === 'error' && item.errorMessage) {
+                  <span class="staged-file-item__error">{{ item.errorMessage }}</span>
+                }
+              </div>
+              <span class="staged-file-item__size">{{ formatFileSize(item.file.size) }}</span>
             </div>
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm file-item__delete"
-              (click)="removeStagedFile(i)"
-              [disabled]="isUploadingLocal"
-              title="Xóa tệp khỏi danh sách chờ"
-            >
-              <span class="material-symbols-outlined">close</span>
-              Xóa
-            </button>
+
+            <div class="staged-file-item__actions">
+              @switch (item.status) {
+                @case ('pending') {
+                  <span class="staged-file-badge staged-file-badge--pending">Chờ xử lý</span>
+                }
+                @case ('uploading') {
+                  <span class="staged-file-badge staged-file-badge--running">
+                    <span class="material-symbols-outlined spin">progress_activity</span>
+                    Đang tải {{ item.uploadPercent }}%
+                  </span>
+                }
+                @case ('processing') {
+                  <span class="staged-file-badge staged-file-badge--running">
+                    <span class="material-symbols-outlined spin">progress_activity</span>
+                    Đang lập chỉ mục...
+                  </span>
+                }
+                @case ('done') {
+                  <span class="staged-file-badge staged-file-badge--done">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    Hoàn tất (+{{ item.addedChunks || 0 }} đoạn)
+                  </span>
+                }
+                @case ('error') {
+                  <span class="staged-file-badge staged-file-badge--error" [title]="item.errorMessage || 'Lỗi xử lý'">
+                    <span class="material-symbols-outlined">error</span>
+                    Lỗi
+                  </span>
+                }
+              }
+
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm file-item__delete"
+                (click)="removeStagedFile(i)"
+                [disabled]="isUploadingLocal"
+                title="Xóa tệp khỏi danh sách chờ"
+              >
+                <span class="material-symbols-outlined">close</span>
+                Xóa
+              </button>
+            </div>
           </li>
           }
         </ul>
@@ -242,15 +361,15 @@
             type="button"
             class="btn btn--primary staged-submit-btn"
             (click)="processStagedFiles()"
-            [disabled]="isUploadingLocal || stagedFiles.length === 0"
+            [disabled]="isUploadingLocal || pendingOrErrorCount === 0"
           >
-            <span class="material-symbols-outlined">
-              {{ isUploadingLocal ? 'hourglass_top' : 'rocket_launch' }}
+            <span class="material-symbols-outlined" [class.spin]="isUploadingLocal">
+              {{ isUploadingLocal ? 'progress_activity' : 'rocket_launch' }}
             </span>
             {{
               isUploadingLocal
                 ? (uploadingProgressText || 'Đang tải lên & lập chỉ mục RAG...')
-                : 'Bắt đầu tải lên & Xử lý RAG (' + stagedFiles.length + ' tệp)'
+                : 'Bắt đầu tải lên & Xử lý RAG (' + pendingOrErrorCount + ' tệp)'
             }}
           </button>
         </div>
@@ -432,6 +551,20 @@
       </div>
 
       <div class="rag-search-options">
+        <label class="rag-option-label">
+          Embedding:
+          <select
+            [(ngModel)]="embeddingProvider"
+            (ngModelChange)="onEmbeddingProviderChange()"
+            class="rag-select"
+            aria-label="Chọn mô hình Embedding"
+          >
+            <option value="local">MiniLM-L12-v2 (Mặc định · Local)</option>
+            <option value="e5-small">multilingual-e5-small (512 tokens · Local)</option>
+            <option value="gemini">Gemini Embedding 2 (Cloud API)</option>
+          </select>
+        </label>
+
         <label class="rag-option-label">
           Chế độ:
           <select [(ngModel)]="searchMode" class="rag-select">

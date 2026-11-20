@@ -146,19 +146,33 @@
             <span class="material-symbols-outlined">warning</span>
             Cần sửa ({{ errorCount + warningCount }})
           </button>
+
+          @if (filteredQuestions.length > 0) {
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm collapse-all-btn"
+              (click)="toggleAllCards()"
+              [title]="areAllCollapsed ? 'Mở rộng tất cả câu hỏi' : 'Thu gọn tất cả câu hỏi'"
+            >
+              <span class="material-symbols-outlined">
+                {{ areAllCollapsed ? 'unfold_more' : 'unfold_less' }}
+              </span>
+              {{ areAllCollapsed ? 'Mở tất cả' : 'Thu gọn tất cả' }}
+            </button>
+          }
         </div>
       </div>
 
       <!-- Danh sách câu hỏi Preview có Inline Edit -->
       <div class="questions-preview-list">
-        @for (q of filteredQuestions; track q.tempId; let idx = $index) {
+        @for (q of filteredQuestions; track q.tempId) {
           <div
             class="card preview-card"
             [class.preview-card--error]="q.status === 'error'"
             [class.preview-card--warning]="q.status === 'warning'"
             [class.preview-card--valid]="q.status === 'valid'"
           >
-            <!-- Card Header: Mã câu, trạng thái, câu cha, nút xóa -->
+            <!-- Tầng 1 Header: Mã câu, Chủ đề, Trạng thái, Thu gọn & Xóa -->
             <div class="preview-card__header">
               <div class="preview-card__meta-left">
                 <input
@@ -174,52 +188,15 @@
                   type="text"
                   class="form-input topic-input"
                   [(ngModel)]="q.topic"
-                  placeholder="Chương / Chủ đề"
+                  placeholder="Chương / Chủ đề..."
                 />
 
-                <!-- Câu hỏi cha / Nhánh hỏi tiếp -->
-                <div class="parent-link-group">
-                  <span class="parent-label">Câu cha:</span>
-                  <input
-                    type="text"
-                    class="form-input parent-input"
-                    [(ngModel)]="q.parentCode"
-                    (input)="validateAllQuestions()"
-                    placeholder="None (Câu độc lập)"
-                    title="Điền mã câu hỏi cha nếu câu này là nhánh hỏi tiếp"
-                  />
-                  @if (q.parentCode) {
-                    <span class="badge badge--followup">Câu hỏi phụ</span>
-                  }
-                </div>
+                @if (q.parentCode) {
+                  <span class="badge badge--followup">Câu phụ của {{ q.parentCode }}</span>
+                }
               </div>
 
               <div class="preview-card__meta-right">
-                <!-- Dropdown Độ khó -->
-                <select
-                  class="form-select diff-select"
-                  [(ngModel)]="q.difficulty"
-                  (change)="validateAllQuestions()"
-                >
-                  <option value="easy">Dễ (Cơ bản)</option>
-                  <option value="medium">Trung bình</option>
-                  <option value="hard">Khó (Nâng cao)</option>
-                </select>
-
-                <!-- Thời lượng -->
-                <div class="time-limit-box">
-                  <input
-                    type="number"
-                    step="30"
-                    min="60"
-                    max="600"
-                    class="form-input time-input"
-                    [(ngModel)]="q.timeLimitSeconds"
-                  />
-                  <span class="time-label">giây</span>
-                </div>
-
-                <!-- Status Badge -->
                 <span
                   class="status-badge status-badge--{{ q.status }}"
                   [title]="q.errors.join('; ') || q.warnings.join('; ')"
@@ -242,81 +219,142 @@
                   }}
                 </span>
 
-                <!-- Nút xóa câu hỏi khỏi danh sách -->
+                <button
+                  type="button"
+                  class="collapse-btn"
+                  [title]="isCardCollapsed(q.tempId) ? 'Mở rộng chi tiết' : 'Thu gọn thẻ'"
+                  (click)="toggleCardCollapse(q.tempId)"
+                >
+                  <span class="material-symbols-outlined">
+                    {{ isCardCollapsed(q.tempId) ? 'expand_more' : 'expand_less' }}
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   class="delete-btn"
                   title="Xóa câu này khỏi danh sách import"
-                  (click)="removeQuestion(idx)"
+                  (click)="removeQuestionById(q.tempId)"
                 >
                   <span class="material-symbols-outlined">delete</span>
                 </button>
               </div>
             </div>
 
-            <!-- Banner cảnh báo / lỗi nếu có -->
-            @if (q.errors.length > 0 || q.warnings.length > 0) {
-              <div
-                class="issue-banner"
-                [class.issue-banner--error]="q.errors.length > 0"
-                [class.issue-banner--warning]="q.errors.length === 0 && q.warnings.length > 0"
-              >
-                @for (err of q.errors; track err) {
-                  <div class="issue-item issue-item--error">
-                    <span class="material-symbols-outlined">error</span>
-                    <span><strong>Lỗi:</strong> {{ err }}</span>
+            @if (isCardCollapsed(q.tempId)) {
+              <div class="preview-card__collapsed-summary" (click)="toggleCardCollapse(q.tempId)">
+                <span class="collapsed-title">{{ q.title || q.content || 'Chưa có tiêu đề' }}</span>
+                <span class="collapsed-meta">
+                  {{ q.criteria.length }} tiêu chí ({{ q.totalScore }}/10.0đ) • {{ q.timeLimitSeconds }}s
+                </span>
+              </div>
+            } @else {
+              <!-- Banner cảnh báo / lỗi nếu có -->
+              @if (q.errors.length > 0 || q.warnings.length > 0) {
+                <div
+                  class="issue-banner"
+                  [class.issue-banner--error]="q.errors.length > 0"
+                  [class.issue-banner--warning]="q.errors.length === 0 && q.warnings.length > 0"
+                >
+                  @for (err of q.errors; track err) {
+                    <div class="issue-item issue-item--error">
+                      <span class="material-symbols-outlined">error</span>
+                      <span><strong>Lỗi:</strong> {{ err }}</span>
+                    </div>
+                  }
+                  @for (warn of q.warnings; track warn) {
+                    <div class="issue-item issue-item--warning">
+                      <span class="material-symbols-outlined">warning</span>
+                      <span><strong>Lưu ý:</strong> {{ warn }}</span>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Tầng 2 Header: Thuộc tính Câu cha / Độ khó / Thời gian dạng lưới rộng rãi -->
+              <div class="preview-card__meta-grid">
+                <div class="meta-field">
+                  <label class="meta-field__label">Câu hỏi cha</label>
+                  <input
+                    type="text"
+                    class="form-input"
+                    [(ngModel)]="q.parentCode"
+                    (input)="validateAllQuestions()"
+                    placeholder="Không có (Câu độc lập)"
+                    title="Điền mã câu hỏi cha nếu câu này là nhánh hỏi tiếp"
+                  />
+                </div>
+
+                <div class="meta-field">
+                  <label class="meta-field__label">Độ khó</label>
+                  <select
+                    class="form-select"
+                    [(ngModel)]="q.difficulty"
+                    (change)="validateAllQuestions()"
+                  >
+                    <option value="easy">Dễ (Cơ bản)</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="hard">Khó (Nâng cao)</option>
+                  </select>
+                </div>
+
+                <div class="meta-field">
+                  <label class="meta-field__label">Thời gian trả lời</label>
+                  <div class="time-limit-box">
+                    <input
+                      type="number"
+                      step="30"
+                      min="60"
+                      max="600"
+                      class="form-input time-input"
+                      [(ngModel)]="q.timeLimitSeconds"
+                    />
+                    <span class="time-label">giây</span>
                   </div>
-                }
-                @for (warn of q.warnings; track warn) {
-                  <div class="issue-item issue-item--warning">
-                    <span class="material-symbols-outlined">warning</span>
-                    <span><strong>Lưu ý:</strong> {{ warn }}</span>
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- Body: Tiêu đề, Nội dung phát vấn, Đáp án tham chiếu -->
-            <div class="preview-card__body">
-              <div class="form-group">
-                <label class="form-label">Tiêu đề tóm tắt:</label>
-                <input
-                  type="text"
-                  class="form-input"
-                  [(ngModel)]="q.title"
-                  (input)="validateAllQuestions()"
-                  placeholder="Tiêu đề câu hỏi..."
-                />
+                </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label">
-                  Nội dung phát vấn cho thí sinh <span class="required">*</span>:
-                </label>
-                <textarea
-                  rows="2"
-                  class="form-textarea"
-                  [(ngModel)]="q.content"
-                  (input)="validateAllQuestions()"
-                  placeholder="Nhập nội dung câu hỏi phát vấn..."
-                ></textarea>
-              </div>
+              <!-- Body: Tiêu đề, Nội dung phát vấn, Đáp án tham chiếu -->
+              <div class="preview-card__body">
+                <div class="form-group">
+                  <label class="form-label">Tiêu đề tóm tắt:</label>
+                  <input
+                    type="text"
+                    class="form-input"
+                    [(ngModel)]="q.title"
+                    (input)="validateAllQuestions()"
+                    placeholder="Tiêu đề câu hỏi..."
+                  />
+                </div>
 
-              <div class="form-group">
-                <label class="form-label">
-                  Đáp án tham chiếu / Reference Answer <span class="required">*</span>:
-                </label>
-                <textarea
-                  rows="3"
-                  class="form-textarea"
-                  [(ngModel)]="q.sampleAnswer"
-                  (input)="validateAllQuestions()"
-                  placeholder="Nêu các ý chính, luận điểm bắt buộc để AI đối chiếu chấm..."
-                ></textarea>
-              </div>
+                <div class="form-group">
+                  <label class="form-label">
+                    Nội dung phát vấn cho thí sinh <span class="required">*</span>:
+                  </label>
+                  <textarea
+                    rows="2"
+                    class="form-textarea"
+                    [(ngModel)]="q.content"
+                    (input)="validateAllQuestions()"
+                    placeholder="Nhập nội dung câu hỏi phát vấn..."
+                  ></textarea>
+                </div>
 
-              <!-- Accordion Rubric chấm điểm của câu này -->
-              <div class="rubric-accordion">
+                <div class="form-group">
+                  <label class="form-label">
+                    Đáp án mẫu / Tham chiếu (Nguồn chấm chính) <span class="required">*</span>:
+                  </label>
+                  <textarea
+                    rows="5"
+                    class="form-textarea answer-textarea"
+                    [(ngModel)]="q.sampleAnswer"
+                    (input)="validateAllQuestions()"
+                    placeholder="Nêu các ý chính, luận điểm bắt buộc để AI đối chiếu chấm..."
+                  ></textarea>
+                </div>
+
+                <!-- Accordion Rubric chấm điểm của câu này -->
+                <div class="rubric-accordion">
                 <div class="rubric-accordion__header" (click)="toggleRubric(q.tempId)">
                   <div class="rubric-accordion__title">
                     <span class="material-symbols-outlined">checklist</span>
@@ -383,12 +421,13 @@
                               </div>
                             </td>
                             <td>
-                              <input
-                                type="text"
+                              <textarea
+                                rows="3"
                                 class="form-input"
+                                style="resize: vertical; min-height: 72px; line-height: 1.45;"
                                 [(ngModel)]="c.description"
-                                placeholder="Mô tả ý cần đạt..."
-                              />
+                                placeholder="Mô tả các ý cần đạt, từ khóa bắt buộc hoặc lưu ý chấm điểm cho AI..."
+                              ></textarea>
                             </td>
                           </tr>
                         }
@@ -398,6 +437,7 @@
                 }
               </div>
             </div>
+            }
           </div>
         }
       </div>

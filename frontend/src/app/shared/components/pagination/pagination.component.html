@@ -1,0 +1,66 @@
+@if (totalItems > 0) {
+  <nav class="pagination-bar" aria-label="Phân trang danh sách">
+    <div class="pagination-bar__info">
+      <span class="pagination-bar__summary">
+        Hiển thị <strong>{{ startItem }}–{{ endItem }}</strong> trong tổng số
+        <strong>{{ totalItems }}</strong> {{ itemLabel }}
+      </span>
+
+      <label class="pagination-bar__size">
+        <span>Số dòng/trang:</span>
+        <select
+          class="pagination-bar__select"
+          [ngModel]="pageSize"
+          (ngModelChange)="onPageSizeSelect($event)"
+          aria-label="Số mục trên mỗi trang"
+        >
+          @for (opt of pageSizeOptions; track opt) {
+            <option [ngValue]="opt">{{ opt }}</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    @if (totalPages > 1) {
+      <div class="pagination-bar__controls">
+        <button
+          type="button"
+          class="pagination-btn pagination-btn--nav"
+          [disabled]="safePage <= 1"
+          (click)="goToPage(safePage - 1)"
+          aria-label="Trang trước"
+        >
+          <span class="material-symbols-outlined">chevron_left</span>
+          <span>Trước</span>
+        </button>
+
+        @for (token of pageTokens; track $index) {
+          @if (token === '...') {
+            <span class="pagination-ellipsis" aria-hidden="true">...</span>
+          } @else {
+            <button
+              type="button"
+              class="pagination-btn"
+              [class.pagination-btn--active]="token === safePage"
+              [attr.aria-current]="token === safePage ? 'page' : null"
+              (click)="goToPage(token)"
+            >
+              {{ token }}
+            </button>
+          }
+        }
+
+        <button
+          type="button"
+          class="pagination-btn pagination-btn--nav"
+          [disabled]="safePage >= totalPages"
+          (click)="goToPage(safePage + 1)"
+          aria-label="Trang sau"
+        >
+          <span>Sau</span>
+          <span class="material-symbols-outlined">chevron_right</span>
+        </button>
+      </div>
+    }
+  </nav>
+}

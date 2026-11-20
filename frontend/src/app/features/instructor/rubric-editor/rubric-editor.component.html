@@ -66,6 +66,29 @@
       </div>
     }
 
+    <!-- Draft Recovery Banner -->
+    @if (pendingDraft) {
+      <div class="draft-banner">
+        <div class="draft-banner__info">
+          <span class="material-symbols-outlined">history</span>
+          <span>
+            Phát hiện bản nháp Rubric chưa lưu lên máy chủ
+            @if (pendingDraftTime) {
+              (lưu tự động lúc <strong>{{ pendingDraftTime }}</strong>)
+            }.
+          </span>
+        </div>
+        <div class="draft-banner__actions">
+          <button type="button" class="btn btn--sm btn--primary" (click)="restoreDraft()">
+            Khôi phục bản nháp
+          </button>
+          <button type="button" class="btn btn--sm btn--ghost" (click)="discardDraft()">
+            Bỏ bản nháp
+          </button>
+        </div>
+      </div>
+    }
+
     <!-- Live Total Score & Quick Actions Bar -->
     <div
       class="score-bar"
@@ -129,6 +152,7 @@
                 class="form-input criterion-title-input"
                 placeholder="Nhập tên tiêu chí..."
                 [(ngModel)]="c.name"
+                (ngModelChange)="onRubricChange()"
               />
             </div>
 
@@ -143,6 +167,7 @@
                   max="10"
                   class="form-input score-number"
                   [(ngModel)]="c.maxScore"
+                  (ngModelChange)="onRubricChange()"
                 />
                 <span class="score-unit">đ</span>
               </div>
@@ -183,17 +208,18 @@
 
           <div class="criterion-card__body">
             <label [for]="'desc-' + idx" class="form-label">
-              Hướng dẫn chi tiết cho AI chấm (Grading Guidance)
+              Hướng dẫn chấm chi tiết cho AI
             </label>
             <p class="form-hint">
-              Mô tả các luận điểm hoặc tiêu chuẩn cụ thể để sinh viên đạt trọn điểm của tiêu chí này.
+              Nêu rõ các ý bắt buộc phải có, từ khóa chuyên môn và cách chia điểm từng phần để AI đối chiếu chính xác.
             </p>
             <textarea
               [id]="'desc-' + idx"
               rows="3"
               class="form-textarea"
-              placeholder="VD: Trình bày chính xác định nghĩa A (1.5đ), phân biệt được A với B (1.0đ), nêu được trường hợp biên (0.5đ)..."
+              placeholder="VD: Trình bày chính xác định nghĩa A (+1.5đ), phân biệt được A với B (+1.0đ), nêu được ví dụ thực tế (+0.5đ)..."
               [(ngModel)]="c.description"
+              (ngModelChange)="onRubricChange()"
             ></textarea>
           </div>
         </div>
@@ -215,16 +241,17 @@
       <section class="card instructions-card">
         <h3 class="instructions-card__title">
           <span class="material-symbols-outlined">settings_suggest</span>
-          Chỉ dẫn chung cho AI (Prompt Instructions)
+          Hướng dẫn chấm tổng quan cho AI
         </h3>
         <p class="form-hint">
-          Lời nhắc tổng quan định hướng AI cách chấm (độ khắt khe, lưu ý lỗi phổ biến, thái độ phản hồi).
+          Định hướng chung cho AI khi chấm câu trả lời (mức độ khắt khe, lỗi phổ biến cần trừ điểm, cách góp ý cho sinh viên).
         </p>
         <textarea
           rows="3"
           class="form-textarea"
           [(ngModel)]="gradingInstructions"
-          placeholder="Nhập hướng dẫn tổng quan cho AI khi chấm điểm ca thi này..."
+          (ngModelChange)="onRubricChange()"
+          placeholder="Nhập hướng dẫn tổng quan cho AI khi chấm điểm câu hỏi này..."
         ></textarea>
       </section>
 
@@ -238,6 +265,12 @@
         </div>
 
         <div class="bottom-actions__right">
+          @if (lastAutoSavedAt) {
+            <span class="autosave-status">
+              <span class="material-symbols-outlined">cloud_done</span>
+              Đã lưu nháp lúc {{ lastAutoSavedAt }}
+            </span>
+          }
           <button
             type="button"
             class="btn btn--primary btn--lg"
