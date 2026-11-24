@@ -105,10 +105,18 @@ export class TranscriptReviewComponent implements OnInit {
     this.practiceApi.saveConfirmedTranscript(this.session.id, this.editedTranscript).subscribe({
       next: () => {
         this.practiceApi.requestEvaluation(this.session!.id).subscribe({
-          next: () => {
+          next: (res) => {
             this.grading = false;
-            this.toast.success('Đã hoàn tất đối chiếu giáo trình Hybrid RAG và chấm điểm Rubric!');
-            this.router.navigate(['/student/sessions', this.session!.id, 'result']);
+            if (res.persisted === false) {
+              this.toast.warning(
+                'AI đã chấm xong nhưng chưa đồng bộ được lịch sử lên máy chủ. Vui lòng kiểm tra kết nối Backend.',
+              );
+            } else {
+              this.toast.success(
+                'Đã hoàn tất đối chiếu giáo trình Hybrid RAG, chấm điểm Rubric và lưu lịch sử!',
+              );
+            }
+            this.router.navigate(['/student/sessions', res.sessionId || this.session!.id, 'result']);
           },
           error: () => {
             this.grading = false;

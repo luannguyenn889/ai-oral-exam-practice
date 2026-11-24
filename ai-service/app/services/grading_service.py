@@ -31,6 +31,7 @@ from app.schemas.eval_schema import (
     RagReference,
 )
 from app.services import rag_service, stt_service
+from app.services.gemini_client import run_with_gemini_client
 
 # Schema JSON kết hợp giữa bộ prompt gốc của speed-to-text-demo (score, summary, strengths, weaknesses, improvement)
 # và bảng điểm chi tiết từng tiêu chí Rubric (criteria) của hệ thống AI Oral Exam Practice.
@@ -293,18 +294,17 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON (không kèm bất k�
         ollama_model_name = llm_model.split()[0] if " " in llm_model else llm_model
         result_text = stt_service.call_ollama_api(ollama_model_name, prompt, is_json=True)
     else:
-        api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-        if not api_key:
-            raise ValueError("Chưa cấu hình GEMINI_API_KEY trong file .env để chấm điểm.")
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=llm_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=GEMINI_RUBRIC_EVALUATION_SCHEMA,
-                temperature=0.1,
+        response = run_with_gemini_client(
+            lambda client: client.models.generate_content(
+                model=llm_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=GEMINI_RUBRIC_EVALUATION_SCHEMA,
+                    temperature=0.1,
+                ),
             ),
+            missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env để chấm điểm.",
         )
         result_text = (response.text or "").strip()
 

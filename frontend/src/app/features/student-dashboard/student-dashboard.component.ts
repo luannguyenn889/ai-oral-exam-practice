@@ -30,6 +30,7 @@ export class StudentDashboardComponent implements OnInit {
   loadingCourses = true;
   loadingHistory = true;
   courses: Course[] = [];
+  allSessions: PracticeSession[] = [];
   recentSessions: PracticeSession[] = [];
 
   // Bộ lọc học phần
@@ -37,6 +38,81 @@ export class StudentDashboardComponent implements OnInit {
   selectedDepartment = '';
   onlyWithQuestions = false;
   sortBy: 'default' | 'questions_desc' | 'name_asc' = 'default';
+
+  getEffectiveScore(session: PracticeSession): number | null {
+    if (
+      session.reviewedByInstructor &&
+      session.instructorScore !== null &&
+      session.instructorScore !== undefined
+    ) {
+      return Number(session.instructorScore);
+    }
+    if (session.evaluation?.totalScore !== null && session.evaluation?.totalScore !== undefined) {
+      return Number(session.evaluation.totalScore);
+    }
+    return null;
+  }
+
+  get totalPracticedCount(): number {
+    return this.allSessions.length;
+  }
+
+  get instructorReviewedCount(): number {
+    return this.allSessions.filter((s) => s.reviewedByInstructor).length;
+  }
+
+  get scoredSessions(): { session: PracticeSession; score: number; maxScore: number }[] {
+    return this.allSessions
+      .map((session) => ({
+        session,
+        score: this.getEffectiveScore(session),
+        maxScore: session.evaluation?.maxScore || 10,
+      }))
+      .filter(
+        (item): item is { session: PracticeSession; score: number; maxScore: number } =>
+          item.score !== null,
+      );
+  }
+
+  get averageScoreDisplay(): string {
+    const list = this.scoredSessions;
+    if (list.length === 0) return '—';
+    const avg = list.reduce((acc, item) => acc + item.score, 0) / list.length;
+    return avg.toFixed(1);
+  }
+
+  get highestScoreDisplay(): string {
+    const list = this.scoredSessions;
+    if (list.length === 0) return '—';
+    const max = Math.max(...list.map((item) => item.score));
+    return max.toFixed(1);
+  }
+
+  get scoreTrendDelta(): number | null {
+    const list = this.scoredSessions;
+    if (list.length < 2) return null;
+    const windowSize = Math.min(3, Math.floor(list.length / 2));
+    const recentSlice = list.slice(0, windowSize);
+    const prevSlice = list.slice(windowSize, windowSize * 2);
+    if (prevSlice.length === 0) return null;
+    const recentAvg = recentSlice.reduce((a, b) => a + b.score, 0) / recentSlice.length;
+    const prevAvg = prevSlice.reduce((a, b) => a + b.score, 0) / prevSlice.length;
+    return Math.round((recentAvg - prevAvg) * 10) / 10;
+  }
+
+  get trendBars(): { id: string; label: string; title: string; score: number; percent: number; reviewed: boolean }[] {
+    return this.scoredSessions
+      .slice(0, 8)
+      .reverse()
+      .map((item, idx) => ({
+        id: item.session.id,
+        label: `#${idx + 1}`,
+        title: `${item.session.questionTitle || 'Phiên luyện tập'} — ${item.score}/${item.maxScore}đ`,
+        score: item.score,
+        percent: Math.min(100, Math.max(8, Math.round((item.score / (item.maxScore || 10)) * 100))),
+        reviewed: Boolean(item.session.reviewedByInstructor),
+      }));
+  }
 
   get availableDepartments(): string[] {
     const set = new Set<string>();
@@ -109,7 +185,8 @@ export class StudentDashboardComponent implements OnInit {
 
     this.practiceApi.getPracticeHistory().subscribe({
       next: (data) => {
-        this.recentSessions = data.slice(0, 5);
+        this.allSessions = data || [];
+        this.recentSessions = this.allSessions.slice(0, 5);
         this.loadingHistory = false;
       },
       error: () => {

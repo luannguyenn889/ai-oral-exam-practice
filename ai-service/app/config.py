@@ -22,15 +22,20 @@ load_dotenv(dotenv_path=ENV_FILE_PATH, override=False)
 
 class Settings(BaseSettings):
     gemini_api_key: str = ""
+    gemini_api_keys: str = ""
     groq_api_key: str = ""
 
     default_stt_provider: str = "groq"
     default_llm_model: str = "gemini-2.5-flash"
     embedding_provider: str = "local"
+    embedding_backend: str = "auto"  # "auto" (onnx tren CPU / cuda FP16 tren GPU), "onnx", hoac "torch"
+    embedding_batch_size: int = 64
     embedding_model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"
     e5_embedding_model_name: str = "intfloat/multilingual-e5-small"
     gemini_embedding_model_name: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
+    gemini_embedding_batch_size: int = 100
+    gemini_embedding_max_workers: int = 3
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     ollama_base_url: str = "http://localhost:11434"
 

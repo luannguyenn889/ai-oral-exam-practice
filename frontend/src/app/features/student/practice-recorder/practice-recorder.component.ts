@@ -37,6 +37,31 @@ export class PracticeRecorderComponent implements OnInit, OnDestroy {
   selectedFileName: string | null = null;
 
   submitting = false;
+  private overLimitNotified = false;
+
+  get timeLimitSeconds(): number {
+    return this.question?.timeLimitSeconds || 180;
+  }
+
+  get timeProgressPercent(): number {
+    if (this.timeLimitSeconds <= 0) return 0;
+    return Math.min(100, Math.round((this.recordingSeconds / this.timeLimitSeconds) * 100));
+  }
+
+  get isNearTimeLimit(): boolean {
+    return (
+      this.recordingSeconds >= Math.floor(this.timeLimitSeconds * 0.8) &&
+      this.recordingSeconds <= this.timeLimitSeconds
+    );
+  }
+
+  get isOverTimeLimit(): boolean {
+    return this.recordingSeconds > this.timeLimitSeconds;
+  }
+
+  get remainingSeconds(): number {
+    return Math.max(0, this.timeLimitSeconds - this.recordingSeconds);
+  }
 
   ngOnInit(): void {
     this.questionId = this.route.snapshot.paramMap.get('questionId') || '';
@@ -95,6 +120,7 @@ export class PracticeRecorderComponent implements OnInit, OnDestroy {
       this.mediaRecorder.start();
       this.isRecording = true;
       this.recordingSeconds = 0;
+      this.overLimitNotified = false;
       this.startTimer();
     } catch {
       this.toast.error(
@@ -123,6 +149,19 @@ export class PracticeRecorderComponent implements OnInit, OnDestroy {
     this.recordingSeconds = 75;
     this.setAudioBlob(dummyBlob, 'Ban_ghi_am_mau_demo.webm');
     this.toast.info('Đã nạp bản ghi âm mẫu để bạn trải nghiệm nhanh bước sửa Transcript & chấm RAG.');
+  }
+
+  clearRecording(): void {
+    if (this.isRecording || this.submitting) return;
+    if (this.audioPreviewUrl) {
+      URL.revokeObjectURL(this.audioPreviewUrl);
+      this.audioPreviewUrl = null;
+    }
+    this.recordedBlob = null;
+    this.selectedFileName = null;
+    this.recordingSeconds = 0;
+    this.overLimitNotified = false;
+    this.toast.info('Đã xóa bản ghi âm hiện tại. Bạn có thể thu lại hoặc chọn file khác.');
   }
 
   private setAudioBlob(blob: Blob, filename: string): void {
@@ -175,6 +214,12 @@ export class PracticeRecorderComponent implements OnInit, OnDestroy {
     this.stopTimer();
     this.timerInterval = setInterval(() => {
       this.recordingSeconds++;
+      if (!this.overLimitNotified && this.recordingSeconds > this.timeLimitSeconds) {
+        this.overLimitNotified = true;
+        this.toast.warning(
+          `Bạn đã vượt quá thời gian gợi ý (${this.formatDuration(this.timeLimitSeconds)}). Bạn có thể tóm ý kết thúc và bấm Dừng thu âm.`,
+        );
+      }
     }, 1000);
   }
 

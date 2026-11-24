@@ -11,10 +11,25 @@ Nhiệm vụ:
 
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import app
 from app.services import rag_service
 
 client = TestClient(app)
+
+
+def _resolve_sample_course_id() -> str:
+    docs_root = settings.resolved_documents_dir
+    if docs_root.is_dir():
+        preferred = ("CNPM", "IT3020", "IT2030", "IT", "SOFTWAREIT")
+        for code in preferred:
+            d = docs_root / code
+            if d.is_dir() and any(f.is_file() for f in d.iterdir()):
+                return code
+        for d in sorted(docs_root.iterdir()):
+            if d.is_dir() and any(f.is_file() for f in d.iterdir()):
+                return d.name
+    return "IT2030"
 
 
 def test_health_endpoint():
@@ -45,17 +60,18 @@ def test_clean_oral_query_and_chunking():
 
 
 def test_rag_index_status_and_hybrid_search():
+    course_code = _resolve_sample_course_id()
     idx_resp = client.post(
         "/ai/rag/index",
-        json={"course_id": "IT2030", "force_reindex": False},
+        json={"course_id": course_code, "force_reindex": False},
     )
     assert idx_resp.status_code == 200
     idx_data = idx_resp.json()
-    assert idx_data["course_id"] == "IT2030"
+    assert idx_data["course_id"] == course_code
     assert idx_data["total_files"] >= 1
     assert idx_data["total_chunks"] > 0
 
-    status_resp = client.get("/ai/rag/status", params={"course_id": "IT2030"})
+    status_resp = client.get("/ai/rag/status", params={"course_id": course_code})
     assert status_resp.status_code == 200
     status_data = status_resp.json()
     assert status_data["status"] == "ready"
@@ -65,7 +81,7 @@ def test_rag_index_status_and_hybrid_search():
     search_resp = client.post(
         "/ai/rag/search",
         json={
-            "course_id": "IT2030",
+            "course_id": course_code,
             "query_text": "Dạ thưa thầy kiểm thử phần mềm Verification và Validation khác nhau thế nào ạ?",
             "top_k": 3,
             "search_mode": "hybrid",
@@ -75,7 +91,7 @@ def test_rag_index_status_and_hybrid_search():
     assert search_resp.status_code == 200
     search_data = search_resp.json()
     assert len(search_data["results"]) > 0
-    assert all(r["course_id"] == "IT2030" for r in search_data["results"])
+    assert all(r["course_id"] == course_code for r in search_data["results"])
     assert search_data["results"][0]["rrf_score"] > 0
 
     # Kiểm tra cô lập theo học phần (học phần chưa có tài liệu phải trả về rỗng)
@@ -104,7 +120,7 @@ def test_transcriptions_and_evaluations_contract():
         "/ai/evaluations",
         json={
             "session_id": "test-session-001",
-            "course_id": "IT2030",
+            "course_id": _resolve_sample_course_id(),
             "question": "Phân biệt Verification và Validation trong kiểm thử phần mềm.",
             "reference_answer": "Verification kiểm tra sản phẩm có đúng đặc tả không; Validation kiểm tra sản phẩm có đúng nhu cầu khách hàng không.",
             "transcript": "Dạ thưa thầy verification là kiểm tra xem mình làm có đúng tài liệu thiết kế không, còn validation là kiểm tra xem phần mềm có đúng ý người dùng cần không ạ.",
@@ -140,15 +156,57 @@ def test_transcriptions_and_evaluations_contract():
     assert eval_data["total_score"] == round(sum(c["score"] for c in eval_data["criteria"]), 2)
 
 
+def test_hitl_suggest_reference_answer():
+    """Kiểm tra luồng Human-in-the-loop: AI khởi tạo Đáp án mẫu + Tham chiếu RAG + lọc đoạn nhiễu."""
+    resp = client.post(
+        "/ai/rag/suggest-answer",
+        json={
+            "course_id": "IT2030",
+            "question": "Phân biệt Verification và Validation trong kiểm thử phần mềm.",
+            "topic": "Kiểm thử phần mềm",
+            "top_k": 3,
+            "search_mode": "hybrid",
+            "include_rubric": True,
+            "llm_model": "mock",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ai_draft"
+    assert len(data["sample_answer"].strip()) > 20
+    assert len(data["suggested_criteria"]) >= 3
+    assert abs(sum(c["max_score"] for c in data["suggested_criteria"]) - 10.0) <= 0.1
+    assert "Human-in-the-loop" in data["notice"] or "Giảng viên" in data["notice"]
+
+    # Nếu có đoạn RAG, kiểm tra lọc selected_chunk_ids (giảng viên loại bỏ đoạn nhiễu)
+    if data["rag_references"]:
+        kept_id = data["rag_references"][0]["chunk_id"]
+        filtered_resp = client.post(
+            "/ai/rag/suggest-answer",
+            json={
+                "course_id": "IT2030",
+                "question": "Phân biệt Verification và Validation trong kiểm thử phần mềm.",
+                "top_k": 3,
+                "selected_chunk_ids": [kept_id],
+                "llm_model": "mock",
+            },
+        )
+        assert filtered_resp.status_code == 200
+        filtered_data = filtered_resp.json()
+        assert filtered_data["used_chunk_ids"] == [kept_id]
+
+
 if __name__ == "__main__":
-    print("1/4 Testing /ai/health...")
+    print("1/5 Testing /ai/health...")
     test_health_endpoint()
-    print("2/4 Testing clean_oral_query & chunk_text...")
+    print("2/5 Testing clean_oral_query & chunk_text...")
     test_clean_oral_query_and_chunking()
-    print("3/4 Testing RAG indexing, status & Hybrid Search (IT2030)...")
+    print("3/5 Testing RAG indexing, status & Hybrid Search (IT2030)...")
     test_rag_index_status_and_hybrid_search()
-    print("4/4 Testing Transcriptions & Evaluations contract...")
+    print("4/5 Testing Transcriptions & Evaluations contract...")
     test_transcriptions_and_evaluations_contract()
+    print("5/5 Testing HITL suggest-answer with RAG...")
+    test_hitl_suggest_reference_answer()
     print("ALL TESTS PASSED SUCCESSFULLY!")
 
 

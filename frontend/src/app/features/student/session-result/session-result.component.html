@@ -10,12 +10,9 @@
     ></app-error-state>
   } @else {
     <header class="result-header">
-      <a
-        [routerLink]="['/student/courses', session.courseId || 'IT2030', 'questions']"
-        class="result-header__back"
-      >
+      <a [routerLink]="courseQuestionsLink" class="result-header__back">
         <span class="material-symbols-outlined">arrow_back</span>
-        Ngân hàng câu hỏi ({{ session.courseId || 'IT2030' }})
+        Ngân hàng câu hỏi ({{ courseLabel }})
       </a>
 
       <div class="step-indicator">
@@ -65,13 +62,51 @@
 
           @if (evaluation.llmModel) {
             <span class="model-tag">
-              Model chấm: {{ evaluation.llmModel }} · Waktu:
+              Model chấm: {{ evaluation.llmModel }} · Thời gian:
               {{ evaluation.processingTimeMs || 1800 }}ms
             </span>
           }
         </div>
       </div>
     </section>
+
+    <!-- Khối Human-in-the-loop: Điểm & nhận xét chính thức từ Giảng viên (nếu đã duyệt) -->
+    @if (hasInstructorReview) {
+      <section class="card instructor-review-card">
+        <div class="instructor-review-card__top">
+          <div class="instructor-review-card__heading">
+            <span class="instructor-verified-badge">
+              <span class="material-symbols-outlined">verified</span>
+              Giảng viên đã duyệt &amp; chốt điểm
+            </span>
+            <span class="instructor-review-card__meta">
+              {{ session.reviewerName || 'Giảng viên phụ trách' }}
+              @if (session.reviewedAt) {
+                · {{ session.reviewedAt | date: 'dd/MM/yyyy HH:mm' }}
+              }
+            </span>
+          </div>
+
+          <div class="instructor-review-card__scores">
+            <div class="instructor-final-score">
+              <span class="instructor-final-score__label">Điểm chốt chính thức</span>
+              <strong>{{ session.instructorScore }} / {{ evaluation.maxScore }}</strong>
+            </div>
+            <span class="ai-compare-tag">AI đề xuất: {{ evaluation.totalScore }} / {{ evaluation.maxScore }}</span>
+          </div>
+        </div>
+
+        @if (session.instructorNotes) {
+          <div class="instructor-notes-box">
+            <strong>
+              <span class="material-symbols-outlined">comment</span>
+              Nhận xét chuyên môn của Giảng viên:
+            </strong>
+            <p>{{ session.instructorNotes }}</p>
+          </div>
+        }
+      </section>
+    }
 
     <!-- Khối 2: Bảng điểm chi tiết theo từng tiêu chí Rubric -->
     <section class="card">
@@ -176,7 +211,7 @@
       </h2>
       <p class="section-sub">
         Dưới đây là các đoạn kiến thức chuẩn trong tài liệu môn
-        <strong>{{ session.courseId || 'IT2030' }}</strong> được AI truy xuất để đối chiếu khi chấm
+        <strong>{{ courseLabel }}</strong> được AI truy xuất để đối chiếu khi chấm
         bài làm của bạn:
       </p>
 
@@ -214,6 +249,12 @@
           <span class="material-symbols-outlined">record_voice_over</span>
           Câu trả lời bạn đã nộp
         </h3>
+        @if (audioPlaybackUrl) {
+          <div class="submitted-audio-box">
+            <span class="submitted-audio-box__label">Bản ghi âm của bạn:</span>
+            <audio [src]="audioPlaybackUrl" controls class="submitted-audio-player"></audio>
+          </div>
+        }
         <p class="comparison-text">"{{ session.transcript }}"</p>
       </section>
 
@@ -230,14 +271,13 @@
 
     <!-- Điều hướng cuối trang -->
     <div class="result-footer-actions">
-      <a [routerLink]="['/student/practice', session.questionId]" class="btn btn--secondary btn--lg">
-        <span class="material-symbols-outlined">replay</span>
-        Luyện tập lại câu hỏi này
-      </a>
-      <a
-        [routerLink]="['/student/courses', session.courseId || 'IT2030', 'questions']"
-        class="btn btn--primary btn--lg"
-      >
+      @if (session.questionId) {
+        <a [routerLink]="['/student/practice', session.questionId]" class="btn btn--secondary btn--lg">
+          <span class="material-symbols-outlined">replay</span>
+          Luyện tập lại câu hỏi này
+        </a>
+      }
+      <a [routerLink]="courseQuestionsLink" class="btn btn--primary btn--lg">
         <span class="material-symbols-outlined">quiz</span>
         Chọn câu hỏi tiếp theo
       </a>

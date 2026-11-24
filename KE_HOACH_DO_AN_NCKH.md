@@ -100,6 +100,40 @@ Các trạng thái lỗi cần thể hiện rõ: `transcription_failed`, `gradin
 4. So sánh cặp điểm giảng viên–AI; phân tích chênh lệch tổng và theo tiêu chí.
 5. Xem lại các trường hợp lệch lớn, điều chỉnh hướng dẫn chấm nếu cần, rồi chạy lại trên tập kiểm thử tách biệt.
 
+### 5.4 Mô hình Human-in-the-loop (HITL) và Cơ chế phân định trọng số chấm điểm
+
+Để giải quyết bài toán tin cậy học thuật và kiểm soát ảo giác (hallucination) của mô hình ngôn ngữ lớn trong đánh giá giáo dục, hệ thống áp dụng triết lý **Human-in-the-loop (HITL)** xuyên suốt hai vòng lặp:
+
+```mermaid
+flowchart LR
+  subgraph V1["Vòng 1: Trước khi thi (Biên soạn & Kiểm duyệt)"]
+    DOC["Giáo trình môn học"] --> HRAG["Hybrid RAG (Dense + BM25 + RRF)"]
+    HRAG --> DRAFT["AI khởi tạo bản nháp Đáp án mẫu + Rubric + Đoạn RAG tham chiếu"]
+    DRAFT --> GV1["Giảng viên lọc đoạn nhiễu, chỉnh sửa & DUYỆT cuối cùng"]
+  end
+  subgraph V2["Vòng 2: Trong & Sau khi thi (Luyện tập & Hậu kiểm)"]
+    SV["Sinh viên ghi âm"] --> STT["STT + Sửa thuật ngữ CNTT"]
+    STT --> SV2["Sinh viên kiểm tra & xác nhận Transcript"]
+    SV2 --> GRADE["AI chấm điểm (Đáp án mẫu & Rubric chính > RAG bổ trợ)"]
+    GV1 --> GRADE
+    GRADE --> GV2["Giảng viên hậu kiểm / chấm đối chiếu (needs_human_review)"]
+  end
+```
+
+**1. Phân định vai trò giữa AI và Giảng viên (Thông điệp bảo vệ NCKH):**
+
+| Giai đoạn | Vai trò của AI (Trợ lý tăng tốc) | Vai trò của Giảng viên (Quyết định chuyên môn) |
+|---|---|---|
+| Chuẩn bị ngân hàng câu hỏi | Bóc tách đề từ Word/Excel; truy xuất Hybrid RAG từ giáo trình để khởi tạo bản nháp Đáp án mẫu và gợi ý Rubric thang 10.0 (`status = ai_draft`). | Kiểm tra các đoạn trích RAG đi kèm, loại bỏ đoạn nhiễu, hiệu đính nội dung chuyên môn và **phê duyệt cuối cùng** để đảm bảo chuẩn đầu ra sư phạm. |
+| Chấm bài luyện tập | Chấm từng tiêu chí theo Rubric đã duyệt, trích dẫn bằng chứng từ transcript và gắn cờ `needs_human_review` khi có độ không chắc chắn cao. | Giữ thẩm quyền chuyên môn cao nhất: đối soát các ca lệch điểm, hiệu chỉnh hướng dẫn chấm và sử dụng kết quả để đánh giá chất lượng hệ thống. |
+
+**2. Nguyên tắc phân định trọng số giữa Đáp án mẫu và RAG:**
+
+- **Nguồn đối chiếu chính (trọng số cao nhất):** *Đáp án mẫu* và *Tiêu chí Rubric* đã được giảng viên kiểm duyệt. Đây là tập kiến thức chuẩn hóa, không nhiễu, quyết định trực tiếp thang điểm.
+- **Nguồn bổ trợ / dự phòng (trọng số phụ):** Ngữ cảnh giáo trình truy xuất tự động bằng **Hybrid Search (Dense Vector Search + Sparse BM25 + Reciprocal Rank Fusion)** với công thức dung hợp thứ hạng:
+  $$\text{RRF\_score}(d) = \sum_{m \in \{\text{Dense}, \text{BM25}\}} \frac{1}{k + \text{rank}_m(d)} \quad (k = 60)$$
+  RAG chỉ dùng để đối chiếu khi sinh viên diễn đạt mở rộng hoặc dùng cách giải thích đồng nghĩa trong giáo trình mà đáp án mẫu chưa liệt kê hết; nếu đoạn RAG bị nhiễu hoặc mâu thuẫn với đáp án của giảng viên, prompt chấm điểm bắt buộc bỏ qua đoạn RAG đó và tuân theo đáp án của giảng viên.
+
 ## 6. Khảo sát và quyết định tích hợp repo tham khảo
 
 Repo chỉ nên được dùng làm **mẫu tham khảo hoặc thành phần** sau khi kiểm tra các mục sau:

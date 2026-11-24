@@ -245,3 +245,199 @@
   padding: var(--space-6);
 }
 
+/* Personal Progress Overview & Trend Chart */
+.progress-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.progress-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 980px) {
+  .progress-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .progress-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.progress-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.progress-kpi__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.progress-kpi__icon--primary {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.progress-kpi__icon--info {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.progress-kpi__icon--success {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.progress-kpi__icon--warning {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.progress-kpi__icon--neutral {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.progress-kpi__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.progress-kpi__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.progress-kpi__sub {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.trend-card {
+  padding: var(--space-4);
+}
+
+.trend-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.trend-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.trend-card__title .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.trend-card__hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  height: 118px;
+  padding-top: 8px;
+}
+
+.trend-bar-col {
+  flex: 1;
+  min-width: 36px;
+  max-width: 72px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.trend-bar-score {
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.trend-bar-track {
+  flex: 1;
+  width: 100%;
+  background: #f1f5f9;
+  border-radius: 6px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.trend-bar-fill {
+  width: 100%;
+  background: var(--color-primary);
+  border-radius: 6px 6px 0 0;
+  transition: height 250ms ease, opacity 150ms ease;
+}
+
+.trend-bar-col:hover .trend-bar-fill {
+  opacity: 0.85;
+}
+
+.trend-bar-fill--reviewed {
+  background: #16a34a;
+}
+
+.trend-bar-fill--low {
+  background: #ef4444;
+}
+
+.trend-bar-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.gv-reviewed-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.gv-reviewed-tag .material-symbols-outlined {
+  font-size: 13px;
+}
+

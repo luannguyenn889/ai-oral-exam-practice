@@ -534,3 +534,137 @@
   color: #16a34a;
 }
 
+/* Human-in-the-loop AI Rubric Suggest */
+.btn--ai-suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #ffffff;
+  border: none;
+  font-weight: 600;
+}
+
+.btn--ai-suggest:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn--ai-suggest:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--approve {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background-color: #16a34a;
+  color: #ffffff;
+  border: 1px solid #15803d;
+  font-weight: 600;
+}
+
+.btn--approve:hover {
+  background-color: #15803d;
+}
+
+.hitl-rubric-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.75rem;
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.875rem;
+}
+
+.hitl-rubric-banner--approved {
+  background-color: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.hitl-rubric-banner__info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  flex: 1 1 360px;
+  line-height: 1.45;
+}
+
+.hitl-rubric-banner__info .material-symbols-outlined {
+  font-size: 1.25rem;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.hitl-rubric-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rag-ref-drawer {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: #f8fafc;
+}
+
+.rag-ref-drawer__title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rag-ref-drawer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.rag-ref-item {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.rag-ref-item__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  margin-bottom: 0.35rem;
+}
+
+.rag-ref-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.rag-ref-item__text {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #334155;
+  line-height: 1.45;
+  white-space: pre-line;
+  max-height: 5rem;
+  overflow-y: auto;
+}
+

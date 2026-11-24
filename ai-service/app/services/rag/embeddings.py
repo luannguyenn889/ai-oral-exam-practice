@@ -11,12 +11,13 @@ Nhiệm vụ:
 - Tiền xử lý truy vấn giọng nói (`clean_oral_query`) và tách từ (`tokenize_text`) phục vụ BM25.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+import importlib.util
 import os
 import re
 import threading
-import time
 import warnings
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from app.config import settings
 
@@ -24,20 +25,13 @@ warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
 warnings.filterwarnings("ignore", message=".*HF Hub.*")
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-GEMINI_MIN_REQUEST_INTERVAL_SECONDS = 0.7
-GEMINI_EMBED_MAX_RETRIES = 3
+os.environ.setdefault("OMP_NUM_THREADS", str(max(1, os.cpu_count() or 4)))
 
 EMBEDDING_PROVIDERS = ("local", "e5-small", "gemini")
 
 _embedding_models: dict[str, Any] = {}
 _embedding_lock = threading.Lock()
 _reranker_model: Any = None
-
-_gemini_client: Any = None
-_gemini_client_api_key: Optional[str] = None
-_gemini_request_lock = threading.Lock()
-_gemini_last_request_at = 0.0
 
 FILLER_PATTERNS = [
     r"\bdạ\b",
@@ -96,76 +90,90 @@ def tokenize_text(text: str) -> list[str]:
     return re.findall(r"\b\w+\b", text.lower())
 
 
+def _can_use_onnx_backend() -> bool:
+    return (
+        importlib.util.find_spec("onnxruntime") is not None
+        and importlib.util.find_spec("optimum.onnxruntime") is not None
+    )
+
+
+def _load_sentence_transformer(target_name: str, backend: str = "torch", device: str = "cpu") -> Any:
+    from sentence_transformers import SentenceTransformer
+
+    kwargs: dict[str, Any] = {"device": device}
+    if backend == "onnx":
+        kwargs["backend"] = "onnx"
+    elif device == "cuda":
+        try:
+            import torch
+
+            kwargs["model_kwargs"] = {"torch_dtype": torch.float16}
+        except Exception:
+            pass
+
+    try:
+        return SentenceTransformer(target_name, local_files_only=True, **kwargs)
+    except Exception:
+        return SentenceTransformer(target_name, **kwargs)
+
+
 def get_embedding_model(model_name: Optional[str] = None) -> Any:
-    """Tải embedding model theo cơ chế Lazy load từ cache máy tính (thread-safe)."""
+    """Tải embedding model theo cơ chế Lazy load (tự chọn ONNX trên CPU hoặc CUDA FP16 trên GPU)."""
     target_name = (model_name or settings.embedding_model_name).strip()
     if target_name in _embedding_models:
         return _embedding_models[target_name]
 
     with _embedding_lock:
         if target_name not in _embedding_models:
-            from sentence_transformers import SentenceTransformer
-
+            device = "cpu"
             try:
-                _embedding_models[target_name] = SentenceTransformer(
-                    target_name, local_files_only=True
-                )
+                import torch
+
+                if torch.cuda.is_available():
+                    device = "cuda"
             except Exception:
-                _embedding_models[target_name] = SentenceTransformer(target_name)
+                device = "cpu"
+
+            preferred = (settings.embedding_backend or "auto").strip().lower()
+            use_onnx = device == "cpu" and preferred in ("auto", "onnx") and _can_use_onnx_backend()
+
+            loaded_backend = "torch"
+            if use_onnx:
+                try:
+                    _embedding_models[target_name] = _load_sentence_transformer(
+                        target_name, backend="onnx", device="cpu"
+                    )
+                    loaded_backend = "onnx"
+                except Exception as exc:
+                    print(
+                        f"[AI-SERVICE] Khong dung duoc ONNX backend cho '{target_name}' ({exc}), chuyen ve PyTorch.",
+                        flush=True,
+                    )
+                    _embedding_models[target_name] = _load_sentence_transformer(
+                        target_name, backend="torch", device="cpu"
+                    )
+            else:
+                _embedding_models[target_name] = _load_sentence_transformer(
+                    target_name, backend="torch", device=device
+                )
+
+            print(
+                f"[AI-SERVICE] Embedding model '{target_name}' ready (device={device}, backend={loaded_backend}).",
+                flush=True,
+            )
     return _embedding_models[target_name]
 
 
-def _gemini_embed_content(contents: list[Any]) -> Any:
-    """Call Gemini embeddings with gentle pacing and bounded 429 retries."""
-    global _gemini_last_request_at
-    from google.genai import types
-
-    for attempt in range(GEMINI_EMBED_MAX_RETRIES + 1):
-        try:
-            with _gemini_request_lock:
-                elapsed = time.monotonic() - _gemini_last_request_at
-                if elapsed < GEMINI_MIN_REQUEST_INTERVAL_SECONDS:
-                    time.sleep(GEMINI_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
-                _gemini_last_request_at = time.monotonic()
-                return _gemini_client.models.embed_content(
-                    model=settings.gemini_embedding_model_name,
-                    contents=contents,
-                    config=types.EmbedContentConfig(
-                        output_dimensionality=settings.gemini_embedding_dimensions
-                    ),
-                )
-        except Exception as exc:
-            status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-            message = str(exc)
-            is_rate_limit = (
-                status_code == 429 or "429" in message or "RESOURCE_EXHAUSTED" in message
-            )
-            if not is_rate_limit or attempt >= GEMINI_EMBED_MAX_RETRIES:
-                raise
-
-            retry_match = re.search(
-                r"retryDelay['\"]?\s*:\s*['\"]?(\d+(?:\.\d+)?)\s*(ms|s)", message, re.I
-            )
-            if not retry_match:
-                retry_match = re.search(
-                    r"retry in\s+(\d+(?:\.\d+)?)\s*(?:seconds?|s)\b", message, re.I
-                )
-            if retry_match:
-                delay = float(retry_match.group(1))
-                if len(retry_match.groups()) > 1 and retry_match.group(2).lower() == "ms":
-                    delay /= 1000
-            else:
-                delay = min(5 * (2**attempt), 30)
-            delay = min(max(delay, 1.0), 120.0)
-            time.sleep(delay)
-
-
 def embed_texts(
-    texts: list[str], task: str = "document", provider: Optional[str] = None
+    texts: list[str],
+    task: str = "document",
+    provider: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> list[list[float]]:
-    """Create normalized vectors locally or through Google Gemini embeddings."""
+    """Create normalized vectors locally (ONNX/CUDA, batch 64) or via parallel multi-key Gemini embeddings."""
     if not texts:
         return []
+    total_texts = len(texts)
     prov = normalize_embedding_provider(provider)
     if prov in ("local", "e5-small"):
         model_name = get_active_embedding_name(prov)
@@ -174,34 +182,74 @@ def embed_texts(
         if "e5" in model_name.lower():
             prefix = "query: " if task == "query" else "passage: "
             inputs = [f"{prefix}{t}" for t in texts]
-        return model.encode(
-            inputs, batch_size=32, show_progress_bar=False, normalize_embeddings=True
-        ).tolist()
+        batch_size = max(1, int(settings.embedding_batch_size or 64))
+        if progress_callback is None or total_texts <= batch_size:
+            result = model.encode(
+                inputs, batch_size=batch_size, show_progress_bar=False, normalize_embeddings=True
+            ).tolist()
+            if progress_callback is not None:
+                progress_callback(total_texts, total_texts)
+            return result
 
-    api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not api_key:
-        raise ValueError("Chưa cấu hình GEMINI_API_KEY trong .env để dùng Gemini Embedding.")
+        vectors: list[list[float]] = []
+        for start in range(0, total_texts, batch_size):
+            batch_inputs = inputs[start : start + batch_size]
+            batch_vecs = model.encode(
+                batch_inputs,
+                batch_size=batch_size,
+                show_progress_bar=False,
+                normalize_embeddings=True,
+            ).tolist()
+            vectors.extend(batch_vecs)
+            progress_callback(min(start + len(batch_inputs), total_texts), total_texts)
+        return vectors
 
-    global _gemini_client, _gemini_client_api_key
-    if _gemini_client is None or _gemini_client_api_key != api_key:
-        from google import genai
-
-        _gemini_client = genai.Client(api_key=api_key)
-        _gemini_client_api_key = api_key
-
+    from app.services.gemini_client import get_gemini_api_keys, run_with_gemini_client
     from google.genai import types
 
     prefix = "task: search result | query: " if task == "query" else "title: none | text: "
-    vectors: list[list[float]] = []
-    for start in range(0, len(texts), 32):
+    batch_size = min(100, max(1, int(settings.gemini_embedding_batch_size or 100)))
+    batches = [texts[start : start + batch_size] for start in range(0, total_texts, batch_size)]
+
+    def _embed_batch(batch_texts: list[str]) -> list[list[float]]:
         contents = [
             types.Content(parts=[types.Part.from_text(text=f"{prefix}{text}")])
-            for text in texts[start : start + 32]
+            for text in batch_texts
         ]
-        response = _gemini_embed_content(contents)
-        vectors.extend(embedding.values for embedding in (response.embeddings or []))
-    if len(vectors) != len(texts):
-        raise RuntimeError(f"Gemini trả về {len(vectors)} vector cho {len(texts)} đoạn văn bản.")
+        response = run_with_gemini_client(
+            lambda client: client.models.embed_content(
+                model=settings.gemini_embedding_model_name,
+                contents=contents,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=settings.gemini_embedding_dimensions
+                ),
+            ),
+            missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env để dùng Gemini Embedding.",
+        )
+        return [list(embedding.values) for embedding in (response.embeddings or [])]
+
+    vectors = []
+    done_count = 0
+    available_keys = max(1, len(get_gemini_api_keys()))
+    max_workers = min(len(batches), available_keys, max(1, int(settings.gemini_embedding_max_workers or 3)))
+
+    if max_workers > 1:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for batch_vectors in executor.map(_embed_batch, batches):
+                vectors.extend(batch_vectors)
+                done_count += len(batch_vectors)
+                if progress_callback is not None:
+                    progress_callback(min(done_count, total_texts), total_texts)
+    else:
+        for batch in batches:
+            batch_vectors = _embed_batch(batch)
+            vectors.extend(batch_vectors)
+            done_count += len(batch_vectors)
+            if progress_callback is not None:
+                progress_callback(min(done_count, total_texts), total_texts)
+
+    if len(vectors) != total_texts:
+        raise RuntimeError(f"Gemini trả về {len(vectors)} vector cho {total_texts} đoạn văn bản.")
     return vectors
 
 

@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../../data-access/api/practice.api';
-import { Course, Question } from '../../../shared/models';
+import { AiRagService } from '../../../core/services/ai-rag.service';
+import { Course, Question, RagChunkResult } from '../../../shared/models';
 import { ToastService } from '../../../core/services/toast.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
@@ -19,6 +20,7 @@ export class QuestionEditorComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
+  private aiRagService = inject(AiRagService);
   private toastService = inject(ToastService);
   private authService = inject(AuthService);
 
@@ -37,6 +39,24 @@ export class QuestionEditorComponent implements OnInit {
   difficulty: 'easy' | 'medium' | 'hard' = 'medium';
   timeLimitMinutes = 3;
   tagsString = '';
+
+  // Human-in-the-loop (AI khởi tạo từ RAG -> Giảng viên chọn lọc, chỉnh sửa & duyệt)
+  isSuggestingAnswer = false;
+  ragReferences: RagChunkResult[] = [];
+  selectedRagChunkIds = new Set<string>();
+  ragSuggestModel = '';
+  ragSuggestNotice = '';
+  answerReviewStatus: 'manual' | 'ai_draft' | 'approved' = 'manual';
+  approvedAt = '';
+
+  get selectedCourseCode(): string {
+    const found = this.courses.find((c) => c.id === this.courseId);
+    return (found?.code || this.courseId || 'IT2030').trim().toUpperCase();
+  }
+
+  get selectedRagCount(): number {
+    return this.ragReferences.filter((r) => this.selectedRagChunkIds.has(r.chunkId)).length;
+  }
 
   ngOnInit(): void {
     this.questionId = this.route.snapshot.paramMap.get('questionId');
@@ -92,6 +112,97 @@ export class QuestionEditorComponent implements OnInit {
 
   setDifficulty(diff: 'easy' | 'medium' | 'hard'): void {
     this.difficulty = diff;
+  }
+
+  generateAiAnswerFromRag(useSelectedChunksOnly = false): void {
+    const queryQuestion = this.content.trim() || this.title.trim();
+    if (!queryQuestion) {
+      this.toastService.warning(
+        'Vui lòng nhập tiêu đề hoặc nội dung câu hỏi trước khi gọi AI gợi ý đáp án.',
+      );
+      return;
+    }
+    if (!this.courseId) {
+      this.toastService.warning('Vui lòng chọn môn học để truy xuất đúng giáo trình RAG.');
+      return;
+    }
+    if (useSelectedChunksOnly && this.selectedRagCount === 0) {
+      this.toastService.warning('Vui lòng chọn ít nhất 1 đoạn trích giáo trình RAG làm căn cứ.');
+      return;
+    }
+
+    this.isSuggestingAnswer = true;
+    this.aiRagService
+      .suggestReferenceAnswer({
+        courseId: this.selectedCourseCode,
+        question: queryQuestion,
+        topic: this.topic.trim() || undefined,
+        topK: 4,
+        searchMode: 'hybrid',
+        includeRubric: false,
+        selectedChunkIds: useSelectedChunksOnly
+          ? Array.from(this.selectedRagChunkIds)
+          : undefined,
+      })
+      .subscribe({
+        next: (res) => {
+          this.isSuggestingAnswer = false;
+          this.sampleAnswer = cleanHtmlToPlainText(res.sampleAnswer);
+          this.ragReferences = res.ragReferences || [];
+          this.selectedRagChunkIds = new Set(
+            res.usedChunkIds && res.usedChunkIds.length > 0
+              ? res.usedChunkIds
+              : this.ragReferences.map((r) => r.chunkId),
+          );
+          this.ragSuggestModel = res.llmModel;
+          this.ragSuggestNotice = res.notice;
+          this.answerReviewStatus = 'ai_draft';
+          this.approvedAt = '';
+          this.toastService.info(
+            this.ragReferences.length > 0
+              ? `AI đã khởi tạo bản nháp từ ${this.selectedRagCount} đoạn giáo trình RAG. Giảng viên vui lòng rà soát và duyệt.`
+              : 'AI đã khởi tạo bản nháp đáp án (chưa có giáo trình RAG cho môn này). Giảng viên vui lòng rà soát và duyệt.',
+          );
+        },
+        error: () => {
+          this.isSuggestingAnswer = false;
+          this.toastService.error(
+            'Không thể kết nối AI Service để gợi ý đáp án. Hãy kiểm tra AI Service đang chạy.',
+          );
+        },
+      });
+  }
+
+  isRagChunkSelected(chunkId: string): boolean {
+    return this.selectedRagChunkIds.has(chunkId);
+  }
+
+  toggleRagChunk(chunkId: string): void {
+    if (this.selectedRagChunkIds.has(chunkId)) {
+      this.selectedRagChunkIds.delete(chunkId);
+    } else {
+      this.selectedRagChunkIds.add(chunkId);
+    }
+  }
+
+  approveAnswer(): void {
+    if (!this.sampleAnswer.trim()) {
+      this.toastService.warning('Chưa có nội dung đáp án mẫu để duyệt.');
+      return;
+    }
+    this.answerReviewStatus = 'approved';
+    const now = new Date();
+    this.approvedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.toastService.success(
+      'Giảng viên đã duyệt Đáp án mẫu. Đây sẽ là nguồn đối chiếu chính khi AI chấm bài.',
+    );
+  }
+
+  onSampleAnswerChange(): void {
+    if (this.answerReviewStatus === 'approved') {
+      const now = new Date();
+      this.approvedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
   }
 
   save(proceedToRubric = false): void {

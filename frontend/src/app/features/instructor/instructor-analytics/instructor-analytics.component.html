@@ -1,0 +1,284 @@
+<div class="analytics-page">
+  <header class="page-header">
+    <div>
+      <span class="page-header__badge">
+        <span class="material-symbols-outlined">analytics</span>
+        Phân tích học tập &amp; Cải tiến bài giảng
+      </span>
+      <h1 class="page-header__title">Thống kê lỗ hổng kiến thức theo học phần</h1>
+      <p class="page-header__subtitle">
+        Tổng hợp từ kết quả chấm Rubric và dẫn chứng AI để xác định câu hỏi khó, tiêu chí hay mất điểm và các ý kiến thức sinh viên thường trả lời thiếu.
+      </p>
+    </div>
+
+    <div class="page-header__controls">
+      <select
+        class="course-select"
+        [(ngModel)]="selectedCourseId"
+        (ngModelChange)="onCourseChange()"
+        aria-label="Lọc theo học phần"
+      >
+        <option value="">Tất cả học phần ({{ courses.length }} môn)</option>
+        @for (c of courses; track c.id) {
+          <option [value]="c.id">{{ c.code }} — {{ c.name }}</option>
+        }
+      </select>
+
+      <button type="button" class="btn btn--secondary" (click)="loadData()" [disabled]="loading">
+        <span class="material-symbols-outlined">refresh</span>
+        Làm mới
+      </button>
+    </div>
+  </header>
+
+  @if (loading) {
+    <div class="loading-stack">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <app-error-state
+      title="Không thể tải dữ liệu thống kê"
+      [message]="error"
+      (retry)="loadData()"
+    ></app-error-state>
+  } @else if (totalSessions === 0) {
+    <app-empty-state
+      icon="insights"
+      title="Chưa có dữ liệu luyện tập để phân tích"
+      description="Khi sinh viên hoàn thành các lượt luyện tập vấn đáp trong học phần, hệ thống sẽ tự động tổng hợp lỗ hổng kiến thức theo câu hỏi, tiêu chí Rubric và chủ đề."
+    ></app-empty-state>
+  } @else {
+    <!-- 4 thẻ KPI tổng quan -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--primary">
+          <span class="material-symbols-outlined">fact_check</span>
+        </div>
+        <div>
+          <div class="kpi-card__label">Tổng lượt đã chấm</div>
+          <div class="kpi-card__value">{{ totalSessions }} lượt</div>
+          <div class="kpi-card__sub">{{ uniqueStudents }} sinh viên tham gia</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--info">
+          <span class="material-symbols-outlined">grade</span>
+        </div>
+        <div>
+          <div class="kpi-card__label">Điểm trung bình</div>
+          <div class="kpi-card__value">{{ averageScore }} / 10</div>
+          <div class="kpi-card__sub">Tính theo điểm chốt/AI</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--success">
+          <span class="material-symbols-outlined">trending_up</span>
+        </div>
+        <div>
+          <div class="kpi-card__label">Tỷ lệ đạt (≥ 5.0đ)</div>
+          <div class="kpi-card__value">{{ passRate }}%</div>
+          <div class="kpi-card__sub">{{ lowScoreCount }} lượt dưới 5.0đ</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--warning">
+          <span class="material-symbols-outlined">rate_review</span>
+        </div>
+        <div>
+          <div class="kpi-card__label">Cần GV hậu kiểm</div>
+          <div class="kpi-card__value">{{ needsReviewCount }} bài</div>
+          <div class="kpi-card__sub">
+            <a routerLink="/instructor/student-history" class="kpi-link">Mở danh sách rà soát →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gợi ý sư phạm nhanh -->
+    @if (pedagogicalInsights.length > 0) {
+      <section class="card insights-box">
+        <h2 class="insights-box__title">
+          <span class="material-symbols-outlined">lightbulb</span>
+          Đề xuất điều chỉnh bài giảng trên lớp
+        </h2>
+        <ul class="insights-box__list">
+          @for (tip of pedagogicalInsights; track tip) {
+            <li>{{ tip }}</li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- Lưới phân tích 1: Câu hỏi yếu nhất + Tiêu chí Rubric hay mất điểm -->
+    <div class="analytics-grid">
+      <section class="card panel-card">
+        <div class="panel-card__header">
+          <div>
+            <h2 class="panel-card__title">
+              <span class="material-symbols-outlined">help_outline</span>
+              Câu hỏi có điểm trung bình thấp nhất
+            </h2>
+            <p class="panel-card__desc">Xếp từ thấp đến cao để phát hiện phần kiến thức sinh viên yếu nhất.</p>
+          </div>
+        </div>
+
+        @if (weakestQuestions.length === 0) {
+          <p class="empty-inline">Chưa có dữ liệu điểm theo câu hỏi.</p>
+        } @else {
+          <div class="question-gap-list">
+            @for (q of weakestQuestions; track q.questionTitle) {
+              <div class="gap-row">
+                <div class="gap-row__main">
+                  <div class="gap-row__title-line">
+                    <span class="gap-row__title">{{ q.questionTitle }}</span>
+                    <span class="score-chip" [class.score-chip--danger]="q.avgScore < 5">
+                      {{ q.avgScore }} / 10
+                    </span>
+                  </div>
+                  <div class="gap-row__meta">
+                    <span class="meta-tag">{{ q.courseCode }}</span>
+                    <span class="meta-tag">{{ q.topic }}</span>
+                    <span>{{ q.attempts }} lượt · {{ q.lowCount }} bài &lt; 5.0đ ({{ q.lowRate }}%)</span>
+                  </div>
+                </div>
+                @if (q.questionId) {
+                  <a
+                    [routerLink]="['/instructor/questions', q.questionId, 'rubric']"
+                    class="btn btn--ghost btn--sm"
+                    title="Mở trang soạn Rubric của câu hỏi này"
+                  >
+                    Xem Rubric
+                  </a>
+                }
+              </div>
+            }
+          </div>
+        }
+      </section>
+
+      <section class="card panel-card">
+        <div class="panel-card__header">
+          <div>
+            <h2 class="panel-card__title">
+              <span class="material-symbols-outlined">checklist</span>
+              Tiêu chí Rubric sinh viên hay mất điểm nhất
+            </h2>
+            <p class="panel-card__desc">Tỷ lệ % điểm đạt được trung bình trên điểm tối đa của từng tiêu chí.</p>
+          </div>
+        </div>
+
+        @if (weakestCriteria.length === 0) {
+          <p class="empty-inline">Chưa có dữ liệu chi tiết từng tiêu chí Rubric từ AI.</p>
+        } @else {
+          <div class="criteria-gap-list">
+            @for (c of weakestCriteria; track c.key) {
+              <div class="criterion-bar-item">
+                <div class="criterion-bar-item__top">
+                  <span class="criterion-bar-item__name">{{ c.name }}</span>
+                  <span class="criterion-bar-item__stat">
+                    <strong>{{ c.avgPercent }}%</strong> ({{ c.avgScore }}/{{ c.avgMaxScore }}đ)
+                  </span>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill"
+                    [ngClass]="getBarColorClass(c.avgPercent)"
+                    [style.width.%]="c.avgPercent"
+                  ></div>
+                </div>
+                <div class="criterion-bar-item__sub">
+                  {{ c.attempts }} lượt chấm · {{ c.below60Count }} lượt đạt dưới 60% điểm tiêu chí
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    </div>
+
+    <!-- Lưới phân tích 2: Chủ đề cần ôn tập + Ý kiến thức AI hay báo thiếu -->
+    <div class="analytics-grid">
+      <section class="card panel-card">
+        <div class="panel-card__header">
+          <div>
+            <h2 class="panel-card__title">
+              <span class="material-symbols-outlined">category</span>
+              Mức độ nắm vững theo chủ đề
+            </h2>
+            <p class="panel-card__desc">Điểm trung bình và số lượt ý thiếu được gom theo chủ đề câu hỏi.</p>
+          </div>
+        </div>
+
+        @if (topicGaps.length === 0) {
+          <p class="empty-inline">Chưa có dữ liệu phân nhóm theo chủ đề.</p>
+        } @else {
+          <table class="topic-table">
+            <thead>
+              <tr>
+                <th>Chủ đề</th>
+                <th class="text-right">Lượt</th>
+                <th class="text-right">Điểm TB</th>
+                <th class="text-right">Dưới 5đ</th>
+                <th class="text-right">Ý thiếu</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (t of topicGaps; track t.topic) {
+                <tr>
+                  <td class="topic-name">{{ t.topic }}</td>
+                  <td class="text-right">{{ t.attempts }}</td>
+                  <td class="text-right">
+                    <span class="score-chip" [class.score-chip--danger]="t.avgScore < 5">
+                      {{ t.avgScore }}
+                    </span>
+                  </td>
+                  <td class="text-right">{{ t.lowCount }}</td>
+                  <td class="text-right">{{ t.missingCount }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+
+      <section class="card panel-card">
+        <div class="panel-card__header">
+          <div>
+            <h2 class="panel-card__title">
+              <span class="material-symbols-outlined">report_problem</span>
+              Ý kiến thức AI hay báo thiếu / chưa chuẩn
+            </h2>
+            <p class="panel-card__desc">Tổng hợp các lỗ hổng phổ biến từ nhận xét chi tiết của AI.</p>
+          </div>
+        </div>
+
+        @if (commonMissingPoints.length === 0) {
+          <p class="empty-inline">Chưa ghi nhận ý thiếu hoặc điểm yếu lặp lại.</p>
+        } @else {
+          <ul class="missing-list">
+            @for (m of commonMissingPoints; track m.text) {
+              <li class="missing-item">
+                <div class="missing-item__header">
+                  <span class="missing-count">{{ m.count }} lần</span>
+                  <span class="missing-text">{{ m.text }}</span>
+                </div>
+                <div class="missing-item__meta">
+                  @for (tp of m.topics; track tp) {
+                    <span class="meta-tag">{{ tp }}</span>
+                  }
+                  @if (m.sampleQuestion) {
+                    <span class="sample-q">VD: {{ m.sampleQuestion }}</span>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    </div>
+  }
+</div>

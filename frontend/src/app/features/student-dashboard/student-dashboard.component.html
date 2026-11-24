@@ -12,6 +12,112 @@
     </a>
   </div>
 
+  <!-- Thống kê tiến độ cá nhân -->
+  @if (!loadingHistory) {
+    <section class="progress-overview">
+      <div class="progress-kpi-grid">
+        <div class="card progress-kpi-card">
+          <div class="progress-kpi__icon progress-kpi__icon--primary">
+            <span class="material-symbols-outlined">mic</span>
+          </div>
+          <div>
+            <div class="progress-kpi__label">Tổng lượt đã luyện</div>
+            <div class="progress-kpi__value">{{ totalPracticedCount }} lượt</div>
+            <div class="progress-kpi__sub">{{ instructorReviewedCount }} bài GV đã duyệt</div>
+          </div>
+        </div>
+
+        <div class="card progress-kpi-card">
+          <div class="progress-kpi__icon progress-kpi__icon--info">
+            <span class="material-symbols-outlined">analytics</span>
+          </div>
+          <div>
+            <div class="progress-kpi__label">Điểm trung bình</div>
+            <div class="progress-kpi__value">{{ averageScoreDisplay }} / 10</div>
+            <div class="progress-kpi__sub">Ưu tiên điểm GV chốt</div>
+          </div>
+        </div>
+
+        <div class="card progress-kpi-card">
+          <div class="progress-kpi__icon progress-kpi__icon--success">
+            <span class="material-symbols-outlined">emoji_events</span>
+          </div>
+          <div>
+            <div class="progress-kpi__label">Điểm cao nhất</div>
+            <div class="progress-kpi__value">{{ highestScoreDisplay }} / 10</div>
+            <div class="progress-kpi__sub">Thành tích tốt nhất</div>
+          </div>
+        </div>
+
+        <div class="card progress-kpi-card">
+          <div
+            class="progress-kpi__icon"
+            [class.progress-kpi__icon--success]="scoreTrendDelta !== null && scoreTrendDelta > 0"
+            [class.progress-kpi__icon--warning]="scoreTrendDelta !== null && scoreTrendDelta < 0"
+            [class.progress-kpi__icon--neutral]="scoreTrendDelta === null || scoreTrendDelta === 0"
+          >
+            <span class="material-symbols-outlined">
+              {{
+                scoreTrendDelta !== null && scoreTrendDelta > 0
+                  ? 'trending_up'
+                  : scoreTrendDelta !== null && scoreTrendDelta < 0
+                    ? 'trending_down'
+                    : 'trending_flat'
+              }}
+            </span>
+          </div>
+          <div>
+            <div class="progress-kpi__label">Xu hướng gần đây</div>
+            <div class="progress-kpi__value">
+              @if (scoreTrendDelta === null) {
+                Chưa đủ dữ liệu
+              } @else if (scoreTrendDelta > 0) {
+                +{{ scoreTrendDelta }}đ
+              } @else if (scoreTrendDelta < 0) {
+                {{ scoreTrendDelta }}đ
+              } @else {
+                Ổn định
+              }
+            </div>
+            <div class="progress-kpi__sub">So với các lần luyện trước</div>
+          </div>
+        </div>
+      </div>
+
+      @if (trendBars.length >= 2) {
+        <div class="card trend-card">
+          <div class="trend-card__header">
+            <h3 class="trend-card__title">
+              <span class="material-symbols-outlined">show_chart</span>
+              Xu hướng điểm {{ trendBars.length }} phiên gần nhất
+            </h3>
+            <span class="trend-card__hint">Bấm vào từng cột để mở chi tiết kết quả</span>
+          </div>
+          <div class="trend-bars">
+            @for (bar of trendBars; track bar.id) {
+              <a
+                [routerLink]="['/student/sessions', bar.id, 'result']"
+                class="trend-bar-col"
+                [title]="bar.title"
+              >
+                <span class="trend-bar-score">{{ bar.score }}</span>
+                <div class="trend-bar-track">
+                  <div
+                    class="trend-bar-fill"
+                    [class.trend-bar-fill--reviewed]="bar.reviewed"
+                    [class.trend-bar-fill--low]="bar.score < 5"
+                    [style.height.%]="bar.percent"
+                  ></div>
+                </div>
+                <span class="trend-bar-label">{{ bar.label }}</span>
+              </a>
+            }
+          </div>
+        </div>
+      }
+    </section>
+  }
+
   <div class="dashboard-grid">
     <section class="section">
       <div class="section__header">
@@ -157,16 +263,22 @@
                   </h4>
                   <div class="history-item__meta">
                     <app-status-badge [status]="session.status"></app-status-badge>
+                    @if (session.reviewedByInstructor) {
+                      <span class="gv-reviewed-tag">
+                        <span class="material-symbols-outlined">verified</span>
+                        GV đã duyệt
+                      </span>
+                    }
                     <span class="history-item__time">{{
                       session.createdAt | date: 'dd/MM/yyyy HH:mm'
                     }}</span>
                   </div>
                 </div>
 
-                @if (session.evaluation) {
+                @if (getEffectiveScore(session) !== null) {
                   <app-score-display
-                    [score]="session.evaluation.totalScore"
-                    [maxScore]="session.evaluation.maxScore"
+                    [score]="getEffectiveScore(session)!"
+                    [maxScore]="session.evaluation?.maxScore || 10"
                     size="sm"
                   ></app-score-display>
                 }

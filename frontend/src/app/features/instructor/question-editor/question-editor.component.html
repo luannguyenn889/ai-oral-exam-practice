@@ -130,19 +130,66 @@
           </div>
         </section>
 
-        <!-- Card 3: Đáp án tham chiếu / Reference Answer -->
+        <!-- Card 3: Đáp án tham chiếu / Reference Answer (Human-in-the-loop) -->
         <section class="card form-section">
           <div class="form-section__header-row">
-            <h2 class="form-section__title">
+            <h2 class="form-section__title" style="margin-bottom: 0">
               <span class="material-symbols-outlined">psychology</span>
               Câu trả lời tham chiếu / Đáp án mẫu (Reference Answer)
             </h2>
-            <span class="badge badge--info">Dành cho AI RAG đối chiếu</span>
+
+            @if (answerReviewStatus === 'ai_draft') {
+              <span class="badge badge--warning">
+                <span class="material-symbols-outlined">auto_awesome</span>
+                AI khởi tạo · Chờ giảng viên duyệt
+              </span>
+            } @else if (answerReviewStatus === 'approved') {
+              <span class="badge badge--success">
+                <span class="material-symbols-outlined">verified</span>
+                Giảng viên đã duyệt{{ approvedAt ? ' (' + approvedAt + ')' : '' }}
+              </span>
+            } @else {
+              <span class="badge badge--info">Nguồn đối chiếu chính</span>
+            }
           </div>
 
-          <p class="form-hint">
-            Hệ thống AI sẽ kết hợp câu trả lời tham chiếu này cùng tài liệu giáo trình RAG để đối chiếu và chấm điểm cho câu trả lời của sinh viên.
+          <p class="form-hint" style="margin-top: 0.5rem">
+            <strong>Human-in-the-loop:</strong> AI hỗ trợ truy xuất giáo trình Hybrid RAG và khởi tạo bản nháp để tăng tốc biên soạn;
+            giảng viên kiểm soát, chỉnh sửa và duyệt cuối cùng để Đáp án mẫu trở thành <strong>nguồn đối chiếu chính</strong> khi chấm thi.
           </p>
+
+          <!-- Thanh công cụ AI trợ lý & Duyệt đáp án -->
+          <div class="hitl-toolbar">
+            <button
+              type="button"
+              class="btn btn--secondary btn--sm"
+              [disabled]="isSuggestingAnswer"
+              (click)="generateAiAnswerFromRag(false)"
+            >
+              <span
+                class="material-symbols-outlined"
+                [class.spin]="isSuggestingAnswer"
+              >
+                {{ isSuggestingAnswer ? 'progress_activity' : 'auto_awesome' }}
+              </span>
+              {{
+                isSuggestingAnswer
+                  ? 'AI đang truy xuất RAG & soạn nháp...'
+                  : 'AI gợi ý Đáp án từ giáo trình (RAG)'
+              }}
+            </button>
+
+            @if (answerReviewStatus === 'ai_draft' && sampleAnswer.trim()) {
+              <button
+                type="button"
+                class="btn btn--approve btn--sm"
+                (click)="approveAnswer()"
+              >
+                <span class="material-symbols-outlined">task_alt</span>
+                Xác nhận & Duyệt đáp án
+              </button>
+            }
+          </div>
 
           <div class="form-group">
             <textarea
@@ -151,9 +198,65 @@
               class="form-textarea"
               placeholder="Nêu các luận điểm chính, từ khóa cốt lõi, ví dụ thực tế mà thí sinh cần đạt được để có điểm tối đa..."
               [(ngModel)]="sampleAnswer"
+              (ngModelChange)="onSampleAnswerChange()"
               name="sampleAnswer"
             ></textarea>
           </div>
+
+          <!-- Khung Tham chiếu RAG để Giảng viên rà soát & lọc bỏ đoạn nhiễu -->
+          @if (ragReferences.length > 0) {
+            <div class="rag-review-panel">
+              <div class="rag-review-panel__header">
+                <div>
+                  <h3 class="rag-review-panel__title">
+                    <span class="material-symbols-outlined">menu_book</span>
+                    Tham chiếu giáo trình RAG ({{ selectedRagCount }}/{{ ragReferences.length }} đoạn được chọn)
+                  </h3>
+                  <p class="rag-review-panel__hint">
+                    Bỏ chọn các đoạn trích bị nhiễu hoặc lệch chủ đề, sau đó bấm tạo lại để AI bám đúng phần kiến thức giảng viên duyệt.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  [disabled]="isSuggestingAnswer || selectedRagCount === 0"
+                  (click)="generateAiAnswerFromRag(true)"
+                >
+                  <span class="material-symbols-outlined">refresh</span>
+                  Tạo lại từ {{ selectedRagCount }} đoạn đã chọn
+                </button>
+              </div>
+
+              <div class="rag-chunk-list">
+                @for (chunk of ragReferences; track chunk.chunkId) {
+                  <label
+                    class="rag-chunk-card"
+                    [class.rag-chunk-card--excluded]="!isRagChunkSelected(chunk.chunkId)"
+                  >
+                    <div class="rag-chunk-card__top">
+                      <div class="rag-chunk-card__check">
+                        <input
+                          type="checkbox"
+                          [checked]="isRagChunkSelected(chunk.chunkId)"
+                          (change)="toggleRagChunk(chunk.chunkId)"
+                        />
+                        <span class="rag-chunk-card__source">{{ chunk.source }}</span>
+                      </div>
+                      <div class="rag-chunk-card__scores">
+                        <span class="rag-score-pill">{{ chunk.method }}</span>
+                        <span class="rag-score-pill">RRF: {{ chunk.rrfScore | number: '1.3-3' }}</span>
+                        @if (chunk.denseSim !== null && chunk.denseSim !== undefined) {
+                          <span class="rag-score-pill">Cosine: {{ chunk.denseSim | number: '1.2-2' }}</span>
+                        }
+                      </div>
+                    </div>
+                    <p class="rag-chunk-card__text">{{ chunk.text }}</p>
+                  </label>
+                }
+              </div>
+            </div>
+          }
         </section>
       </main>
 

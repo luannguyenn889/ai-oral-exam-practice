@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -8,6 +8,13 @@ import { ToastService } from '../../../core/services/toast.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
 
+interface QuestionImportDraft {
+  courseId: string;
+  fileName: string;
+  questions: ExtractedQuestion[];
+  savedAt: string;
+}
+
 @Component({
   selector: 'app-question-import',
   standalone: true,
@@ -15,7 +22,7 @@ import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
   templateUrl: './question-import.component.html',
   styleUrl: './question-import.component.css',
 })
-export class QuestionImportComponent implements OnInit {
+export class QuestionImportComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
@@ -24,6 +31,17 @@ export class QuestionImportComponent implements OnInit {
 
   courses: Course[] = [];
   selectedCourseId = '';
+
+  // Lưu tạm phiên nhập hàng loạt (Draft / Auto-save)
+  lastAutoSavedAt = '';
+  pendingDraft: QuestionImportDraft | null = null;
+  pendingDraftTime = '';
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private get draftStorageKey(): string {
+    const uid = this.authService.getCurrentUser()?.id || 'anon';
+    return `question_import_draft_${uid}`;
+  }
 
   // Trạng thái xử lý file
   selectedFile: File | null = null;
@@ -74,12 +92,53 @@ export class QuestionImportComponent implements OnInit {
     return this.errorCount > 0;
   }
 
+  isAiGenerated(q: ExtractedQuestion): boolean {
+    const tags = q.tags || [];
+    return Boolean(
+      q.aiGeneratedAnswer ||
+        q.aiGeneratedRubric ||
+        tags.includes('Đáp án do AI soạn') ||
+        tags.includes('Rubric do AI đề xuất'),
+    );
+  }
+
+  get aiPendingReviewCount(): number {
+    return this.questions.filter((q) => this.isAiGenerated(q) && !q.instructorApproved).length;
+  }
+
+  toggleQuestionApproval(q: ExtractedQuestion): void {
+    q.instructorApproved = !q.instructorApproved;
+    this.scheduleAutoSave();
+  }
+
+  approveAllAiQuestions(): void {
+    let updated = 0;
+    for (const q of this.questions) {
+      if (this.isAiGenerated(q) && !q.instructorApproved) {
+        q.instructorApproved = true;
+        updated++;
+      }
+    }
+    if (updated > 0) {
+      this.scheduleAutoSave();
+      this.toastService.success(`Đã đánh dấu duyệt ${updated} câu hỏi có nội dung AI gợi ý.`);
+    }
+  }
+
   ngOnInit(): void {
     const courseIdParam = this.route.snapshot.queryParamMap.get('courseId');
     if (courseIdParam) {
       this.selectedCourseId = courseIdParam;
     }
     this.loadCourses();
+    this.checkExistingDraft();
+  }
+
+  ngOnDestroy(): void {
+    if (this.autoSaveTimer !== null) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
   }
 
   loadCourses(): void {
@@ -156,6 +215,7 @@ export class QuestionImportComponent implements OnInit {
           })),
         }));
         this.validateAllQuestions();
+        this.saveDraftNow();
         this.toastService.success(
           `AI đã phân tích xong! Phát hiện ${result.totalDetected} câu hỏi và thang điểm Rubric.`,
         );
@@ -208,6 +268,109 @@ export class QuestionImportComponent implements OnInit {
         q.status = 'valid';
       }
     }
+
+    if (this.extractResult) {
+      this.scheduleAutoSave();
+    }
+  }
+
+  private scheduleAutoSave(): void {
+    if (this.autoSaveTimer !== null) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveDraftNow();
+    }, 700);
+  }
+
+  private saveDraftNow(): void {
+    if (!this.extractResult || this.questions.length === 0) return;
+    try {
+      const now = new Date();
+      const draft: QuestionImportDraft = {
+        courseId: this.selectedCourseId,
+        fileName: this.extractResult.fileName,
+        questions: this.questions.map((q) => ({
+          ...q,
+          criteria: (q.criteria || []).map((c) => ({ ...c })),
+        })),
+        savedAt: now.toISOString(),
+      };
+      localStorage.setItem(this.draftStorageKey, JSON.stringify(draft));
+      this.lastAutoSavedAt = this.formatTime(now);
+      this.pendingDraft = null;
+    } catch {
+      // Bỏ qua nếu trình duyệt chặn hoặc đầy localStorage
+    }
+  }
+
+  private checkExistingDraft(): void {
+    try {
+      const raw = localStorage.getItem(this.draftStorageKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as QuestionImportDraft;
+      if (!draft || !Array.isArray(draft.questions) || draft.questions.length === 0) {
+        return;
+      }
+      this.pendingDraft = draft;
+      this.pendingDraftTime = draft.savedAt ? this.formatTime(new Date(draft.savedAt)) : '';
+    } catch {
+      this.pendingDraft = null;
+    }
+  }
+
+  restoreDraft(): void {
+    if (!this.pendingDraft) return;
+    const draft = this.pendingDraft;
+    if (draft.courseId) {
+      this.selectedCourseId = draft.courseId;
+    }
+    this.questions = draft.questions.map((q) => ({
+      ...q,
+      criteria: (q.criteria || []).map((c) => ({ ...c })),
+    }));
+    this.extractResult = {
+      fileName: draft.fileName || 'Ban_nhap_nhap_hang_loat',
+      totalDetected: this.questions.length,
+      validCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      questions: this.questions,
+    };
+    this.lastAutoSavedAt = this.pendingDraftTime;
+    this.pendingDraft = null;
+    this.validateAllQuestions();
+    this.toastService.success(
+      `Đã khôi phục phiên nhập hàng loạt (${this.questions.length} câu hỏi).`,
+    );
+  }
+
+  discardDraft(): void {
+    this.pendingDraft = null;
+    this.clearDraft();
+    this.toastService.info('Đã bỏ bản nháp nhập hàng loạt.');
+  }
+
+  private clearDraft(): void {
+    if (this.autoSaveTimer !== null) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+    this.lastAutoSavedAt = '';
+    try {
+      localStorage.removeItem(this.draftStorageKey);
+    } catch {
+      // ignore
+    }
+  }
+
+  private formatTime(date: Date): string {
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
   }
 
   toggleRubric(tempId: string): void {
@@ -306,6 +469,7 @@ export class QuestionImportComponent implements OnInit {
     this.selectedFile = null;
     this.extractResult = null;
     this.questions = [];
+    this.clearDraft();
   }
 
   downloadTemplate(): void {
@@ -343,6 +507,7 @@ export class QuestionImportComponent implements OnInit {
     this.practiceApi.commitBatchQuestions(this.selectedCourseId, this.questions).subscribe({
       next: (res) => {
         this.isSubmitting = false;
+        this.clearDraft();
         this.toastService.success(res.message || `Đã nhập thành công ${res.importedCount} câu hỏi vào ngân hàng!`);
         this.router.navigate(['/instructor/questions'], {
           queryParams: { courseId: this.selectedCourseId },

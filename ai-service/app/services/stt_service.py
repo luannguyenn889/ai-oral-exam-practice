@@ -16,6 +16,7 @@ Nhiệm vụ:
 
 import contextlib
 import gc
+import importlib
 import os
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ from google import genai
 from groq import Groq
 
 from app.config import settings
+from app.services.gemini_client import has_gemini_api_key, run_with_gemini_client
 
 _device: Optional[str] = None
 _model_cache: dict[str, Any] = {}
@@ -104,10 +106,16 @@ def load_whisper_model(model_name: str = "base") -> Any:
     unload_whisper_models(exclude=model_name)
     with _model_lock:
         if model_name not in _model_cache:
-            import whisper
+            try:
+                whisper_mod = importlib.import_module("whisper")
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Chưa cài đặt gói optional 'openai-whisper' để chạy STT cục bộ. "
+                    "Hãy chạy: pip install -e .[local-stt] hoặc dùng provider 'groq' / 'gemini'."
+                ) from exc
 
             dev = get_device()
-            _model_cache[model_name] = whisper.load_model(model_name, device=dev)
+            _model_cache[model_name] = whisper_mod.load_model(model_name, device=dev)
         return _model_cache[model_name]
 
 
@@ -183,48 +191,51 @@ def transcribe_with_gemini_cloud(
     api_key: Optional[str] = None,
     gemini_model: str = "gemini-2.5-flash",
 ) -> str:
-    key = (api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not key:
-        raise ValueError("Chưa cấu hình GEMINI_API_KEY trong file .env.")
     if not media_path or not os.path.exists(media_path):
         raise ValueError(f"Không tìm thấy file âm thanh: {media_path}")
 
-    client = genai.Client(api_key=key)
-    ext = os.path.splitext(media_path)[1] or ".wav"
-    with tempfile.NamedTemporaryFile(suffix=ext, prefix="gemini_stt_", delete=False) as tmp:
-        safe_temp_path = tmp.name
-    shutil.copy(media_path, safe_temp_path)
+    def _run(client: genai.Client) -> str:
+        ext = os.path.splitext(media_path)[1] or ".wav"
+        with tempfile.NamedTemporaryFile(suffix=ext, prefix="gemini_stt_", delete=False) as tmp:
+            safe_temp_path = tmp.name
+        shutil.copy(media_path, safe_temp_path)
 
-    try:
-        audio_file = client.files.upload(file=safe_temp_path)
-    finally:
-        if os.path.exists(safe_temp_path):
-            os.remove(safe_temp_path)
+        try:
+            audio_file = client.files.upload(file=safe_temp_path)
+        finally:
+            if os.path.exists(safe_temp_path):
+                os.remove(safe_temp_path)
 
-    start_time = time.time()
-    while audio_file.state.name == "PROCESSING":
-        time.sleep(1)
-        audio_file = client.files.get(name=audio_file.name)
-        if time.time() - start_time > 60:
-            raise TimeoutError("Quá thời gian chờ Gemini xử lý file âm thanh.")
+        start_time = time.time()
+        while audio_file.state.name == "PROCESSING":
+            time.sleep(1)
+            audio_file = client.files.get(name=audio_file.name)
+            if time.time() - start_time > 60:
+                raise TimeoutError("Quá thời gian chờ Gemini xử lý file âm thanh.")
 
-    if audio_file.state.name == "FAILED":
-        raise RuntimeError("Gemini API xử lý file âm thanh thất bại.")
+        if audio_file.state.name == "FAILED":
+            raise RuntimeError("Gemini API xử lý file âm thanh thất bại.")
 
-    prompt = (
-        "Hãy nghe file âm thanh đính kèm và ký âm (transcribe) toàn bộ câu trả lời của sinh viên "
-        "thành văn bản tiếng Việt chính xác nhất (speech-to-text). Chỉ trả về phần văn bản đã ký âm được, "
-        "giữ nguyên các ngắt nghỉ tự nhiên, không thêm giải thích hay lời bàn luận nào khác."
+        prompt = (
+            "Hãy nghe file âm thanh đính kèm và ký âm (transcribe) toàn bộ câu trả lời của sinh viên "
+            "thành văn bản tiếng Việt chính xác nhất (speech-to-text). Chỉ trả về phần văn bản đã ký âm được, "
+            "giữ nguyên các ngắt nghỉ tự nhiên, không thêm giải thích hay lời bàn luận nào khác."
+        )
+        response = client.models.generate_content(model=gemini_model, contents=[audio_file, prompt])
+        transcript = (response.text or "").strip()
+
+        try:
+            client.files.delete(name=audio_file.name)
+        except Exception:
+            pass
+
+        return transcript
+
+    return run_with_gemini_client(
+        _run,
+        explicit_key=api_key,
+        missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env.",
     )
-    response = client.models.generate_content(model=gemini_model, contents=[audio_file, prompt])
-    transcript = (response.text or "").strip()
-
-    try:
-        client.files.delete(name=audio_file.name)
-    except Exception:
-        pass
-
-    return transcript
 
 
 def call_ollama_api(
@@ -256,8 +267,7 @@ def correct_transcript_with_gemini(
         return ""
 
     is_local = "ollama" in gemini_model.lower() or gemini_model.startswith("gemma3")
-    key = (api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not is_local and not key:
+    if not is_local and not (api_key and api_key.strip()) and not has_gemini_api_key():
         return transcript
 
     prompt = f"""
@@ -282,8 +292,10 @@ Yêu cầu sửa đổi chi tiết:
         if is_local:
             ollama_model = gemini_model.split()[0] if " " in gemini_model else gemini_model
             return call_ollama_api(ollama_model, prompt, is_json=False)
-        client = genai.Client(api_key=key)
-        response = client.models.generate_content(model=gemini_model, contents=prompt)
+        response = run_with_gemini_client(
+            lambda client: client.models.generate_content(model=gemini_model, contents=prompt),
+            explicit_key=api_key,
+        )
         corrected = (response.text or "").strip()
         return corrected if corrected else transcript
     except Exception:
@@ -332,7 +344,7 @@ def run_transcription_pipeline(
         raise ValueError(f"Không hỗ trợ stt_provider: {provider}")
 
     if enable_spell_correction:
-        if provider == "mock" and not settings.gemini_api_key:
+        if provider == "mock" and not has_gemini_api_key():
             corrected_transcript = (
                 raw_transcript.replace("úp", "OOP").replace("chư tượng", "trừu tượng")
             )

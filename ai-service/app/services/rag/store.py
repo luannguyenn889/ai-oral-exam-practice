@@ -14,7 +14,7 @@ Nhiệm vụ:
 import glob
 import hashlib
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import chromadb
 
@@ -161,8 +161,17 @@ def index_documents(
     force_reindex: bool = False,
     embedding_provider: Optional[str] = None,
     chunking_strategy: Optional[str] = None,
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> dict[str, Any]:
-    """Đồng bộ tài liệu trong data/documents/{course_id}/ với ChromaDB."""
+    """Đồng bộ tài liệu trong data/documents/{course_id}/ với ChromaDB (hỗ trợ báo tiến độ theo từng bước)."""
+
+    def _report(**payload: Any) -> None:
+        if progress_callback is not None:
+            try:
+                progress_callback(payload)
+            except Exception:
+                pass
+
     norm_course = normalize_course_id(course_id)
     course_dir = str(settings.course_documents_dir(norm_course))
     collection = get_chroma_collection(embedding_provider)
@@ -173,6 +182,14 @@ def index_documents(
         invalidate_bm25_cache(norm_course)
 
     all_files = list_course_files(norm_course)
+    total_files = len(all_files)
+    _report(
+        phase="scanning",
+        percent=3,
+        total_files=total_files,
+        processed_files=0,
+        message=f"Đang kiểm tra {total_files} tài liệu trong kho học phần {norm_course}...",
+    )
 
     try:
         existing = collection.get(
@@ -203,9 +220,12 @@ def index_documents(
     added_or_updated = 0
     removed = 0
 
-    for file_path in all_files:
+    for file_idx, file_path in enumerate(all_files):
         source = os.path.relpath(file_path, course_dir).replace("\\", "/")
         current_sources.add(source)
+        file_start_pct = 5 + int((file_idx / max(1, total_files)) * 88)
+        file_span_pct = max(1, int(88 / max(1, total_files)))
+
         try:
             with open(file_path, "rb") as source_file:
                 content_hash = hashlib.sha256(source_file.read()).hexdigest()
@@ -221,7 +241,26 @@ def index_documents(
             and previous.get("chunking_strategy") == active_strategy
             and previous.get("chunking_version") == CHUNKING_VERSION
         ):
+            _report(
+                phase="scanning",
+                percent=min(94, file_start_pct + file_span_pct),
+                processed_files=file_idx + 1,
+                total_files=total_files,
+                current_file=source,
+                message=f"Giữ nguyên chỉ mục đã có ({file_idx + 1}/{total_files}): {source}",
+            )
             continue
+
+        _report(
+            phase="extracting",
+            percent=min(94, file_start_pct + max(1, file_span_pct // 10)),
+            processed_files=file_idx,
+            total_files=total_files,
+            current_file=source,
+            processed_chunks=0,
+            total_chunks=0,
+            message=f"Đang đọc & cắt đoạn tài liệu ({file_idx + 1}/{total_files}): {source}",
+        )
 
         extension = os.path.splitext(file_path)[1].lower()
         if extension == ".docx":
@@ -241,7 +280,54 @@ def index_documents(
         if file_chunks:
             old_ids = previous["ids"] if previous else []
             texts = [chunk["text"] for chunk in file_chunks]
-            embeddings = embed_texts(texts, task="document", provider=embedding_provider)
+            chunk_total = len(texts)
+
+            _report(
+                phase="embedding",
+                percent=min(94, file_start_pct + max(2, file_span_pct // 6)),
+                processed_files=file_idx,
+                total_files=total_files,
+                current_file=source,
+                processed_chunks=0,
+                total_chunks=chunk_total,
+                message=f"Đang tạo vector (0/{chunk_total} đoạn) — {source}",
+            )
+
+            def _on_embed_progress(done: int, total: int) -> None:
+                ratio = done / max(1, total)
+                embed_pct = file_start_pct + int(file_span_pct * (0.15 + 0.75 * ratio))
+                _report(
+                    phase="embedding",
+                    percent=min(94, embed_pct),
+                    processed_files=file_idx,
+                    total_files=total_files,
+                    current_file=source,
+                    processed_chunks=done,
+                    total_chunks=total,
+                    message=f"Đang tạo vector ({done}/{total} đoạn) — {source}",
+                )
+
+            if progress_callback is not None:
+                embeddings = embed_texts(
+                    texts,
+                    task="document",
+                    provider=embedding_provider,
+                    progress_callback=_on_embed_progress,
+                )
+            else:
+                embeddings = embed_texts(texts, task="document", provider=embedding_provider)
+
+            _report(
+                phase="storing",
+                percent=min(95, file_start_pct + int(file_span_pct * 0.95)),
+                processed_files=file_idx,
+                total_files=total_files,
+                current_file=source,
+                processed_chunks=chunk_total,
+                total_chunks=chunk_total,
+                message=f"Đang lưu {chunk_total} đoạn vào ChromaDB — {source}",
+            )
+
             collection.upsert(
                 ids=[chunk["id"] for chunk in file_chunks],
                 documents=texts,
@@ -265,11 +351,27 @@ def index_documents(
                 collection.delete(ids=list(stale_ids))
             added_or_updated += len(file_chunks)
 
+        _report(
+            phase="storing",
+            percent=min(95, file_start_pct + file_span_pct),
+            processed_files=file_idx + 1,
+            total_files=total_files,
+            current_file=source,
+            message=f"Hoàn tất tài liệu ({file_idx + 1}/{total_files}): {source}",
+        )
+
     for source, item in existing_by_source.items():
         if source not in current_sources and item["ids"]:
             collection.delete(ids=item["ids"])
             removed += len(item["ids"])
 
+    _report(
+        phase="finalizing",
+        percent=97,
+        processed_files=total_files,
+        total_files=total_files,
+        message="Đang làm mới chỉ mục BM25 và kiểm đếm dữ liệu...",
+    )
     invalidate_bm25_cache(norm_course)
 
     try:
@@ -278,7 +380,7 @@ def index_documents(
     except Exception:
         course_chunk_count = 0
 
-    return {
+    result = {
         "course_id": norm_course,
         "status": "ready" if course_chunk_count > 0 else "empty",
         "total_files": len(all_files),
@@ -288,6 +390,14 @@ def index_documents(
         "embedding_model": active_embedding_name,
         "chunking_strategy": active_strategy,
     }
+    _report(
+        phase="completed",
+        percent=100,
+        processed_files=total_files,
+        total_files=total_files,
+        message=f"Hoàn tất đồng bộ ({course_chunk_count} đoạn từ {total_files} tài liệu).",
+    )
+    return result
 
 
 def query_relevant_chunks(

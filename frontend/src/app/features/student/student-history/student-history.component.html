@@ -1,0 +1,204 @@
+<div class="history-page">
+  <header class="history-header">
+    <div>
+      <h1 class="history-title">Lịch sử luyện tập vấn đáp AI</h1>
+      <p class="history-sub">
+        Xem lại các phiên luyện tập đã thực hiện, điểm chấm theo Rubric, dẫn chứng giáo trình RAG và nhận xét duyệt từ Giảng viên.
+      </p>
+    </div>
+    <a [routerLink]="newPracticeLink" class="btn btn--primary">
+      <span class="material-symbols-outlined">mic</span>
+      Luyện tập câu hỏi mới
+    </a>
+  </header>
+
+  @if (!loading && !error && sessions.length > 0) {
+    <section class="summary-strip">
+      <div class="summary-stat">
+        <span class="summary-stat__label">Tổng lượt đã luyện</span>
+        <strong class="summary-stat__value">{{ sessions.length }} lượt</strong>
+      </div>
+      <div class="summary-stat">
+        <span class="summary-stat__label">Điểm trung bình</span>
+        <strong class="summary-stat__value">{{ averageScoreDisplay }} / 10</strong>
+      </div>
+      <div class="summary-stat">
+        <span class="summary-stat__label">Giảng viên đã duyệt</span>
+        <strong class="summary-stat__value summary-stat__value--success">{{ reviewedCount }} bài</strong>
+      </div>
+    </section>
+
+    <section class="controls-bar" #historyTop>
+      <div class="controls-bar__row">
+        <div class="search-box">
+          <span class="material-symbols-outlined">search</span>
+          <input
+            type="text"
+            placeholder="Tìm theo câu hỏi, nội dung trả lời hoặc nhận xét giảng viên..."
+            [(ngModel)]="searchQuery"
+            (ngModelChange)="onFilterChange()"
+          />
+          @if (searchQuery) {
+            <button
+              type="button"
+              class="search-clear"
+              (click)="searchQuery = ''; onFilterChange()"
+              aria-label="Xóa tìm kiếm"
+            >
+              <span class="material-symbols-outlined">cancel</span>
+            </button>
+          }
+        </div>
+
+        <select
+          class="course-select"
+          [(ngModel)]="selectedCourseFilter"
+          (ngModelChange)="onFilterChange()"
+          aria-label="Lọc theo học phần"
+        >
+          <option value="">Tất cả học phần ({{ courses.length }} môn)</option>
+          @for (c of courses; track c.id) {
+            <option [value]="c.id">{{ c.code }} — {{ c.name }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="controls-bar__bottom">
+        <div class="status-tabs">
+          <button
+            type="button"
+            class="btn btn--sm"
+            [class.btn--primary]="statusFilter === 'all'"
+            [class.btn--ghost]="statusFilter !== 'all'"
+            (click)="setStatusFilter('all')"
+          >
+            Tất cả ({{ sessions.length }})
+          </button>
+          <button
+            type="button"
+            class="btn btn--sm"
+            [class.btn--primary]="statusFilter === 'reviewed'"
+            [class.btn--ghost]="statusFilter !== 'reviewed'"
+            (click)="setStatusFilter('reviewed')"
+          >
+            Giảng viên đã duyệt ({{ reviewedCount }})
+          </button>
+          <button
+            type="button"
+            class="btn btn--sm"
+            [class.btn--primary]="statusFilter === 'ai_only'"
+            [class.btn--ghost]="statusFilter !== 'ai_only'"
+            (click)="setStatusFilter('ai_only')"
+          >
+            AI đã chấm ({{ sessions.length - reviewedCount }})
+          </button>
+        </div>
+
+        <span class="controls-meta">Đang hiển thị {{ filteredSessions.length }} phiên</span>
+      </div>
+    </section>
+  }
+
+  @if (loading) {
+    <div class="history-list">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <app-error-state
+      title="Không thể tải lịch sử luyện tập"
+      [message]="error"
+      (retry)="loadData()"
+    ></app-error-state>
+  } @else if (filteredSessions.length === 0) {
+    <app-empty-state
+      icon="history"
+      [title]="
+        hasActiveFilter
+          ? 'Không tìm thấy phiên luyện tập phù hợp'
+          : 'Bạn chưa có phiên luyện tập nào'
+      "
+      [description]="
+        hasActiveFilter
+          ? 'Thử xóa bớt bộ lọc học phần hoặc từ khóa tìm kiếm để xem lại toàn bộ lịch sử.'
+          : 'Hãy chọn một học phần và câu hỏi vấn đáp để bắt đầu luyện tập và nhận đánh giá chi tiết từ AI.'
+      "
+      [actionLabel]="hasActiveFilter ? 'Đặt lại bộ lọc' : undefined"
+      (action)="resetFilters()"
+    ></app-empty-state>
+  } @else {
+    <div class="history-list">
+      @for (item of paginatedSessions; track item.id) {
+        <div class="card history-card">
+          <div class="history-card__main">
+            <div class="history-card__meta">
+              <span class="badge-code">{{ getCourseLabel(item) }}</span>
+              @if (item.reviewedByInstructor) {
+                <span class="badge-reviewed">
+                  <span class="material-symbols-outlined">verified</span>
+                  Giảng viên đã duyệt
+                </span>
+              } @else {
+                <span class="badge-ai">AI đã chấm</span>
+              }
+              <span class="history-date">{{ item.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+
+            <h2 class="history-card__title">{{ item.questionTitle }}</h2>
+
+            @if (item.transcript) {
+              <p class="history-card__excerpt">"{{ item.transcript }}"</p>
+            }
+
+            @if (item.reviewedByInstructor && item.instructorNotes) {
+              <div class="history-card__instructor-note">
+                <span class="material-symbols-outlined">comment</span>
+                <span>
+                  <strong>{{ item.reviewerName || 'Giảng viên' }}:</strong>
+                  {{ item.instructorNotes }}
+                </span>
+              </div>
+            }
+          </div>
+
+          <div class="history-card__right">
+            @if (getEffectiveScore(item) !== null) {
+              <div class="history-score-wrap">
+                <div
+                  class="history-score"
+                  [class.history-score--reviewed]="item.reviewedByInstructor"
+                >
+                  <strong>{{ getEffectiveScore(item) }}</strong> / {{ getMaxScore(item) }} điểm
+                </div>
+                @if (
+                  item.reviewedByInstructor &&
+                  item.evaluation &&
+                  item.instructorScore !== item.evaluation.totalScore
+                ) {
+                  <span class="history-ai-sub">AI chấm: {{ item.evaluation.totalScore }}đ</span>
+                }
+              </div>
+            }
+            <a
+              [routerLink]="['/student/sessions', item.id, 'result']"
+              class="btn btn--secondary btn--sm"
+            >
+              Xem chi tiết &amp; RAG
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </a>
+          </div>
+        </div>
+      }
+    </div>
+
+    <app-pagination
+      [currentPage]="safeCurrentPage"
+      [totalItems]="filteredSessions.length"
+      [pageSize]="pageSize"
+      [pageSizeOptions]="[8, 16, 32]"
+      (pageChange)="onPageChange($event)"
+      (pageSizeChange)="onPageSizeChange($event)"
+    ></app-pagination>
+  }
+</div>

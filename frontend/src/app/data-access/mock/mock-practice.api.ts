@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of, delay, throwError, catchError, map } from 'rxjs';
+import { Observable, of, delay, throwError, catchError, map, switchMap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { PracticeApi } from '../api/practice.api';
 import {
@@ -11,6 +11,7 @@ import {
   Evaluation,
   ExtractedQuestion,
   QuestionExtractResult,
+  InstructorPracticeRecord,
 } from '../../shared/models';
 import { AiRagService } from '../../core/services/ai-rag.service';
 
@@ -199,12 +200,83 @@ export class MockPracticeApi extends PracticeApi {
     );
   }
 
+  private isUuid(value?: string | null): boolean {
+    if (!value) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+  }
+
+  private recordToPracticeSession(rec: InstructorPracticeRecord): PracticeSession {
+    return {
+      id: rec.id,
+      questionId: rec.questionId || '',
+      courseId: rec.courseId || rec.courseCode || undefined,
+      courseCode: rec.courseCode || undefined,
+      questionTitle: rec.questionTitle,
+      courseName: rec.courseName || undefined,
+      userId: rec.studentId,
+      status: 'completed',
+      audioUrl: rec.audioUrl || undefined,
+      transcript: rec.transcript || undefined,
+      isTranscriptConfirmed: true,
+      evaluation: rec.evaluation || undefined,
+      reviewedByInstructor: rec.reviewedByInstructor,
+      instructorScore: rec.instructorScore ?? null,
+      instructorNotes: rec.instructorNotes ?? null,
+      reviewerName: rec.reviewerName ?? null,
+      reviewedAt: rec.reviewedAt ?? null,
+      createdAt: rec.createdAt,
+      updatedAt: rec.reviewedAt || rec.createdAt,
+    };
+  }
+
   override getPracticeSession(sessionId: string): Observable<PracticeSession> {
-    const s = this.findSession(sessionId);
-    if (!s) {
-      return throwError(() => new Error('Không tìm thấy phiên luyện tập này.'));
+    const local = this.findSession(sessionId);
+    const recordIdToFetch = this.isUuid(sessionId)
+      ? sessionId
+      : (local as any)?.backendRecordId && this.isUuid((local as any).backendRecordId)
+        ? (local as any).backendRecordId
+        : null;
+
+    if (recordIdToFetch) {
+      return this.http
+        .get<any>(`${environment.apiBaseUrl}/practice-records/${encodeURIComponent(recordIdToFetch)}`)
+        .pipe(
+          map((raw) => {
+            const dbSession = this.recordToPracticeSession(this.mapPracticeRecord(raw));
+            return {
+              ...local,
+              ...dbSession,
+              audioUrl: dbSession.audioUrl || local?.audioUrl,
+            };
+          }),
+          catchError(() => {
+            if (local) {
+              return of({ ...local });
+            }
+            return this.getPracticeHistory().pipe(
+              switchMap((all) => {
+                const matched = all.find((item) => item.id === sessionId);
+                return matched
+                  ? of(matched)
+                  : throwError(() => new Error('Không tìm thấy phiên luyện tập này.'));
+              }),
+            );
+          }),
+        );
     }
-    return of({ ...s }).pipe(delay(50));
+
+    if (local) {
+      return of({ ...local }).pipe(delay(50));
+    }
+
+    return this.getPracticeHistory().pipe(
+      switchMap((all) => {
+        const matched = all.find((item) => item.id === sessionId);
+        return matched
+          ? of(matched)
+          : throwError(() => new Error('Không tìm thấy phiên luyện tập này.'));
+      }),
+    );
   }
 
   override uploadAudio(sessionId: string, audioFile: Blob): Observable<PracticeSession> {
@@ -214,12 +286,37 @@ export class MockPracticeApi extends PracticeApi {
     }
     this.sessionAudioBlobs.set(sessionId, audioFile);
     s.status = 'uploaded';
-    if (audioFile.size > 50) {
-      s.audioUrl = URL.createObjectURL(audioFile);
-    }
     s.updatedAt = new Date().toISOString();
-    this.persistSessionsToStorage();
-    return of({ ...s }).pipe(delay(50));
+
+    if (audioFile.size <= 100) {
+      this.persistSessionsToStorage();
+      return of({ ...s }).pipe(delay(50));
+    }
+
+    const ext = audioFile.type.includes('wav')
+      ? 'wav'
+      : audioFile.type.includes('mp3') || audioFile.type.includes('mpeg')
+        ? 'mp3'
+        : audioFile.type.includes('ogg')
+          ? 'ogg'
+          : 'webm';
+    const formData = new FormData();
+    formData.append('file', audioFile, `recording_${Date.now()}.${ext}`);
+
+    return this.http
+      .post<{ audioUrl: string }>(`${environment.apiBaseUrl}/practice-records/audio`, formData)
+      .pipe(
+        map((res) => {
+          s.audioUrl = res.audioUrl || URL.createObjectURL(audioFile);
+          this.persistSessionsToStorage();
+          return { ...s };
+        }),
+        catchError(() => {
+          s.audioUrl = URL.createObjectURL(audioFile);
+          this.persistSessionsToStorage();
+          return of({ ...s });
+        }),
+      );
   }
 
   override requestTranscription(sessionId: string): Observable<{ status: string; jobId?: string }> {
@@ -297,7 +394,9 @@ export class MockPracticeApi extends PracticeApi {
     return of({ ...s }).pipe(delay(50));
   }
 
-  override requestEvaluation(sessionId: string): Observable<{ status: string; jobId?: string }> {
+  override requestEvaluation(
+    sessionId: string,
+  ): Observable<{ status: string; jobId?: string; sessionId?: string; persisted?: boolean }> {
     const s = this.findSession(sessionId);
     if (!s) {
       return throwError(() => new Error('Không tìm thấy phiên luyện tập này.'));
@@ -338,13 +437,56 @@ export class MockPracticeApi extends PracticeApi {
         topK: 3,
       })
       .pipe(
-        map((evalResult) => {
+        switchMap((evalResult) => {
           s.status = 'completed';
           s.transcript = transcriptToGrade;
           s.evaluation = evalResult;
+          s.courseCode = ragCourseCode || s.courseCode;
           s.updatedAt = new Date().toISOString();
           this.persistSessionsToStorage();
-          return { status: 'success', jobId: `job-eval-${Date.now()}` };
+
+          const persistedAudioUrl =
+            s.audioUrl && s.audioUrl.startsWith('/api/') ? s.audioUrl : null;
+
+          return this.http
+            .post<any>(`${environment.apiBaseUrl}/practice-records`, {
+              courseId: resolvedCourse?.id || s.courseId || q.courseId,
+              courseCode: ragCourseCode,
+              questionId: s.questionId,
+              questionTitle: s.questionTitle || q.title,
+              transcript: transcriptToGrade,
+              audioUrl: persistedAudioUrl,
+              totalScore: evalResult.totalScore,
+              maxScore: evalResult.maxScore,
+              needsHumanReview: Boolean(evalResult.needsHumanReview),
+              evaluationJson: JSON.stringify(evalResult),
+            })
+            .pipe(
+              map((saved) => {
+                const dbId = saved?.id ? String(saved.id) : s.id;
+                s.id = dbId;
+                (s as any).backendRecordId = dbId;
+                if (saved?.audioUrl) {
+                  s.audioUrl = saved.audioUrl;
+                }
+                this.persistSessionsToStorage();
+                return {
+                  status: 'success',
+                  jobId: `job-eval-${Date.now()}`,
+                  sessionId: dbId,
+                  persisted: true,
+                };
+              }),
+              catchError((e) => {
+                console.warn('Không lưu được practice-record lên backend:', e);
+                return of({
+                  status: 'success',
+                  jobId: `job-eval-${Date.now()}`,
+                  sessionId: s.id,
+                  persisted: false,
+                });
+              }),
+            );
         }),
         catchError((err) => {
           console.error('Lỗi khi AI chấm điểm câu trả lời:', err);
@@ -359,18 +501,135 @@ export class MockPracticeApi extends PracticeApi {
   }
 
   override getEvaluation(sessionId: string): Observable<Evaluation> {
-    const s = this.findSession(sessionId);
-    if (!s) {
-      return throwError(() => new Error('Không tìm thấy phiên luyện tập này.'));
+    return this.getPracticeSession(sessionId).pipe(
+      switchMap((s) =>
+        s.evaluation
+          ? of(s.evaluation)
+          : throwError(() => new Error('Chưa có kết quả đánh giá cho phiên luyện tập này.')),
+      ),
+    );
+  }
+
+  override fetchProtectedAudioBlob(audioUrl: string): Observable<Blob> {
+    if (!audioUrl) {
+      return throwError(() => new Error('Không có đường dẫn file ghi âm.'));
     }
-    if (s.evaluation) {
-      return of(s.evaluation).pipe(delay(50));
-    }
-    return throwError(() => new Error('Chưa có kết quả đánh giá cho phiên luyện tập này.'));
+    const baseOrigin = environment.apiBaseUrl.replace(/\/api\/?$/, '');
+    const resolvedUrl = audioUrl.startsWith('/api/')
+      ? `${baseOrigin}${audioUrl}`
+      : audioUrl;
+    return this.http.get(resolvedUrl, { responseType: 'blob' });
   }
 
   override getPracticeHistory(_userId?: string): Observable<PracticeSession[]> {
-    return of([...this.mockSessions]).pipe(delay(200));
+    return this.http.get<any[]>(`${environment.apiBaseUrl}/practice-records/me`).pipe(
+      map((rows) => {
+        const dbSessions: PracticeSession[] = (rows || []).map((raw) =>
+          this.recordToPracticeSession(this.mapPracticeRecord(raw)),
+        );
+        const merged = [...dbSessions];
+        const existingIds = new Set(dbSessions.map((d) => d.id));
+        const existingKeys = new Set(
+          dbSessions.map((d) => `${d.questionId}|${d.transcript || ''}`),
+        );
+        for (const local of this.mockSessions) {
+          const k = `${local.questionId}|${local.transcript || ''}`;
+          if (!existingIds.has(local.id) && !existingKeys.has(k)) {
+            merged.push(local);
+          }
+        }
+        return merged;
+      }),
+      catchError(() => of([...this.mockSessions]).pipe(delay(100))),
+    );
+  }
+
+  override getInstructorPracticeRecords(
+    courseId?: string,
+    needsReviewOnly?: boolean,
+  ): Observable<InstructorPracticeRecord[]> {
+    const queryParts: string[] = [];
+    if (courseId) {
+      queryParts.push(`courseId=${encodeURIComponent(courseId)}`);
+    }
+    if (needsReviewOnly) {
+      queryParts.push('needsReviewOnly=true');
+    }
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    return this.http
+      .get<any[]>(`${environment.apiBaseUrl}/practice-records/instructor${qs}`)
+      .pipe(
+        map((rows) => (rows || []).map((r) => this.mapPracticeRecord(r))),
+        catchError((err) => {
+          const msg =
+            err?.error?.message ||
+            err?.message ||
+            'Không thể tải kết quả luyện tập của sinh viên từ máy chủ.';
+          return throwError(() => new Error(msg));
+        }),
+      );
+  }
+
+  override reviewPracticeRecord(
+    recordId: string,
+    instructorScore: number,
+    instructorNotes: string,
+  ): Observable<InstructorPracticeRecord> {
+    return this.http
+      .put<any>(
+        `${environment.apiBaseUrl}/practice-records/${encodeURIComponent(recordId)}/review`,
+        {
+          instructorScore,
+          instructorNotes,
+        },
+      )
+      .pipe(
+        map((r) => this.mapPracticeRecord(r)),
+        catchError((err) => {
+          const msg =
+            err?.error?.message ||
+            err?.message ||
+            'Không thể lưu kết quả rà soát của giảng viên.';
+          return throwError(() => new Error(msg));
+        }),
+      );
+  }
+
+  private mapPracticeRecord(raw: any): InstructorPracticeRecord {
+    let evaluation: Evaluation | null = null;
+    if (raw?.evaluationJson) {
+      try {
+        evaluation = JSON.parse(raw.evaluationJson) as Evaluation;
+      } catch {
+        evaluation = null;
+      }
+    }
+    return {
+      id: String(raw.id),
+      studentId: String(raw.studentId),
+      studentName: raw.studentName || 'Sinh viên',
+      studentEmail: raw.studentEmail || '',
+      studentCode: raw.studentCode ?? null,
+      studentDepartment: raw.studentDepartment ?? null,
+      courseId: raw.courseId ? String(raw.courseId) : null,
+      courseCode: raw.courseCode ?? null,
+      courseName: raw.courseName ?? null,
+      questionId: raw.questionId ? String(raw.questionId) : null,
+      questionTitle: raw.questionTitle || 'Câu hỏi vấn đáp',
+      status: raw.status || 'completed',
+      transcript: raw.transcript ?? null,
+      audioUrl: raw.audioUrl ?? null,
+      totalScore: raw.totalScore ?? null,
+      maxScore: raw.maxScore ?? 10,
+      needsHumanReview: Boolean(raw.needsHumanReview),
+      evaluation,
+      reviewedByInstructor: Boolean(raw.reviewedByInstructor),
+      instructorScore: raw.instructorScore ?? null,
+      instructorNotes: raw.instructorNotes ?? null,
+      reviewerName: raw.reviewerName ?? null,
+      reviewedAt: raw.reviewedAt ?? null,
+      createdAt: raw.createdAt || new Date().toISOString(),
+    };
   }
 
   override saveCourse(course: Partial<Course>): Observable<Course> {
@@ -584,6 +843,9 @@ export class MockPracticeApi extends PracticeApi {
           status: q.status || 'valid',
           errors: q.errors || [],
           warnings: q.warnings || [],
+          aiGeneratedAnswer: !!q.ai_generated_answer,
+          aiGeneratedRubric: !!q.ai_generated_rubric,
+          instructorApproved: false,
         }));
 
         return {
