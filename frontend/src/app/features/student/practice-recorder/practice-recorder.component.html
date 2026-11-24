@@ -76,6 +76,45 @@
         cảnh đề bài.
       </p>
 
+      <div class="privacy-notice">
+        <span class="material-symbols-outlined">shield_person</span>
+        <div>
+          <strong>Quyền riêng tư &amp; Xin phép thu âm:</strong> Trình duyệt sẽ xin quyền truy cập Microphone khi bạn bấm bắt đầu.
+          Bản ghi âm chỉ được dùng để chuyển giọng nói thành văn bản (STT), phục vụ chấm luyện tập theo Rubric và lưu riêng tư cho bạn và giảng viên phụ trách học phần.
+        </div>
+      </div>
+
+      @if (isRecording || recordingSeconds > 0) {
+        <div
+          class="timer-bar-card"
+          [class.timer-bar-card--warning]="isNearTimeLimit"
+          [class.timer-bar-card--danger]="isOverTimeLimit"
+        >
+          <div class="timer-bar-card__top">
+            <span class="timer-bar-card__status">
+              <span class="material-symbols-outlined">
+                {{ isOverTimeLimit ? 'warning' : isRecording ? 'radio_button_checked' : 'timer' }}
+              </span>
+              @if (isOverTimeLimit) {
+                Đã vượt thời gian gợi ý (+{{ formatDuration(recordingSeconds - timeLimitSeconds) }})
+              } @else if (isNearTimeLimit) {
+                Sắp hết thời gian gợi ý (còn {{ formatDuration(remainingSeconds) }})
+              } @else if (isRecording) {
+                Đang thu âm...
+              } @else {
+                Thời lượng bản ghi
+              }
+            </span>
+            <span class="timer-bar-card__clock">
+              {{ formatDuration(recordingSeconds) }} / {{ formatDuration(timeLimitSeconds) }}
+            </span>
+          </div>
+          <div class="timer-progress-track">
+            <div class="timer-progress-fill" [style.width.%]="timeProgressPercent"></div>
+          </div>
+        </div>
+      }
+
       <div class="mic-controls">
         @if (!isRecording) {
           <button
@@ -139,21 +178,33 @@
             <audio [src]="audioPreviewUrl" controls class="audio-player"></audio>
           }
 
-          <button
-            type="button"
-            class="btn btn--primary btn--lg"
-            [disabled]="submitting"
-            (click)="submitAudioAndTranscribe()"
-          >
-            <span class="material-symbols-outlined">
-              {{ submitting ? 'hourglass_top' : 'send' }}
-            </span>
-            {{
-              submitting
-                ? 'Đang nhận dạng giọng nói & chuẩn hóa thuật ngữ CNTT...'
-                : 'Nộp âm thanh & Chuyển thành văn bản (Bước 2)'
-            }}
-          </button>
+          <div class="audio-ready-box__actions">
+            <button
+              type="button"
+              class="btn btn--primary btn--lg"
+              [disabled]="submitting"
+              (click)="submitAudioAndTranscribe()"
+            >
+              <span class="material-symbols-outlined">
+                {{ submitting ? 'hourglass_top' : 'send' }}
+              </span>
+              {{
+                submitting
+                  ? 'Đang nhận dạng giọng nói & chuẩn hóa thuật ngữ CNTT...'
+                  : 'Nộp âm thanh & Chuyển thành văn bản (Bước 2)'
+              }}
+            </button>
+
+            <button
+              type="button"
+              class="btn btn--ghost"
+              [disabled]="submitting"
+              (click)="clearRecording()"
+            >
+              <span class="material-symbols-outlined">delete_outline</span>
+              Xóa &amp; Thu lại
+            </button>
+          </div>
         </div>
       }
     </section>

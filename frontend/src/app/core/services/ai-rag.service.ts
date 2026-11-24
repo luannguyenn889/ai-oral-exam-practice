@@ -9,6 +9,7 @@ import {
   RagChunkResult,
   RagSearchResponse,
   RagStatus,
+  RagSuggestAnswerResponse,
 } from '../../shared/models';
 
 export interface RagUploadProgressEvent {
@@ -95,6 +96,53 @@ export interface SttPipelineResult {
 export type EmbeddingProviderOption = 'local' | 'e5-small' | 'gemini';
 export type ChunkingStrategyOption = 'recursive' | 'semantic' | 'legacy';
 
+export interface RagIndexJobStatus {
+  jobId: string;
+  courseId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  phase: string;
+  percent: number;
+  message: string;
+  currentFile?: string | null;
+  processedFiles: number;
+  totalFiles: number;
+  processedChunks: number;
+  totalChunks: number;
+  embeddingProvider: string;
+  chunkingStrategy: string;
+  elapsedSeconds: number;
+  result?: {
+    courseId: string;
+    status: string;
+    totalFiles: number;
+    addedOrUpdatedChunks: number;
+    removedChunks: number;
+    totalChunks: number;
+    embeddingModel: string;
+    chunkingStrategy?: string;
+  } | null;
+  error?: string | null;
+}
+
+interface RawRagIndexJob {
+  job_id: string;
+  course_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  phase: string;
+  percent: number;
+  message: string;
+  current_file?: string | null;
+  processed_files: number;
+  total_files: number;
+  processed_chunks: number;
+  total_chunks: number;
+  embedding_provider: string;
+  chunking_strategy: string;
+  elapsed_seconds: number;
+  result?: RawRagIndexResponse | null;
+  error?: string | null;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -178,6 +226,73 @@ export class AiRagService {
           chunkingStrategy: res.chunking_strategy,
         })),
       );
+  }
+
+  private mapIndexJob(res: RawRagIndexJob): RagIndexJobStatus {
+    return {
+      jobId: res.job_id,
+      courseId: res.course_id,
+      status: res.status,
+      phase: res.phase,
+      percent: Number(res.percent) || 0,
+      message: res.message || '',
+      currentFile: res.current_file ?? null,
+      processedFiles: Number(res.processed_files) || 0,
+      totalFiles: Number(res.total_files) || 0,
+      processedChunks: Number(res.processed_chunks) || 0,
+      totalChunks: Number(res.total_chunks) || 0,
+      embeddingProvider: res.embedding_provider,
+      chunkingStrategy: res.chunking_strategy,
+      elapsedSeconds: Number(res.elapsed_seconds) || 0,
+      result: res.result
+        ? {
+            courseId: res.result.course_id,
+            status: res.result.status,
+            totalFiles: res.result.total_files,
+            addedOrUpdatedChunks: res.result.added_or_updated_chunks,
+            removedChunks: res.result.removed_chunks,
+            totalChunks: res.result.total_chunks,
+            embeddingModel: res.result.embedding_model,
+            chunkingStrategy: res.result.chunking_strategy,
+          }
+        : null,
+      error: res.error ?? null,
+    };
+  }
+
+  startIndexCourseDocumentsJob(
+    courseId = 'IT2030',
+    forceReindex = false,
+    embeddingProvider?: EmbeddingProviderOption,
+    chunkingStrategy?: ChunkingStrategyOption,
+  ): Observable<RagIndexJobStatus> {
+    return this.http
+      .post<RawRagIndexJob>(`${this.aiUrl}/ai/rag/index/start`, {
+        course_id: courseId,
+        force_reindex: forceReindex,
+        ...(embeddingProvider ? { embedding_provider: embeddingProvider } : {}),
+        ...(chunkingStrategy ? { chunking_strategy: chunkingStrategy } : {}),
+      })
+      .pipe(map((res) => this.mapIndexJob(res)));
+  }
+
+  getIndexJobStatus(jobId: string): Observable<RagIndexJobStatus> {
+    return this.http
+      .get<RawRagIndexJob>(`${this.aiUrl}/ai/rag/index/jobs/${encodeURIComponent(jobId)}`)
+      .pipe(map((res) => this.mapIndexJob(res)));
+  }
+
+  getActiveIndexJob(
+    courseId: string,
+    embeddingProvider?: EmbeddingProviderOption,
+  ): Observable<RagIndexJobStatus | null> {
+    const params: Record<string, string> = { course_id: courseId };
+    if (embeddingProvider) {
+      params['embedding_provider'] = embeddingProvider;
+    }
+    return this.http
+      .get<RawRagIndexJob | null>(`${this.aiUrl}/ai/rag/index/active`, { params })
+      .pipe(map((res) => (res ? this.mapIndexJob(res) : null)));
   }
 
   uploadCourseDocument(
@@ -412,6 +527,74 @@ export class AiRagService {
             }),
           ),
           formattedContext: res.formatted_context,
+        })),
+      );
+  }
+
+  suggestReferenceAnswer(params: {
+    courseId: string;
+    question: string;
+    topic?: string;
+    referenceAnswer?: string;
+    topK?: number;
+    searchMode?: 'hybrid' | 'dense' | 'bm25';
+    includeRubric?: boolean;
+    selectedChunkIds?: string[];
+  }): Observable<RagSuggestAnswerResponse> {
+    return this.http
+      .post<{
+        course_id: string;
+        sample_answer: string;
+        suggested_criteria: {
+          name: string;
+          description: string;
+          max_score: number;
+        }[];
+        rag_references: RawRagSearchResponse['results'];
+        used_chunk_ids: string[];
+        llm_model: string;
+        status: 'ai_draft';
+        notice: string;
+      }>(`${this.aiUrl}/ai/rag/suggest-answer`, {
+        course_id: params.courseId,
+        question: params.question,
+        topic: params.topic || null,
+        reference_answer: params.referenceAnswer || null,
+        top_k: params.topK ?? 4,
+        search_mode: params.searchMode ?? 'hybrid',
+        include_rubric: params.includeRubric ?? false,
+        ...(params.selectedChunkIds !== undefined
+          ? { selected_chunk_ids: params.selectedChunkIds }
+          : {}),
+      })
+      .pipe(
+        map((res) => ({
+          courseId: res.course_id,
+          sampleAnswer: res.sample_answer || '',
+          suggestedCriteria: (res.suggested_criteria || []).map((c) => ({
+            name: c.name,
+            description: c.description || '',
+            maxScore: Number(c.max_score) || 0,
+          })),
+          ragReferences: (res.rag_references || []).map(
+            (r): RagChunkResult => ({
+              chunkId: r.chunk_id,
+              source: r.source,
+              courseId: r.course_id,
+              index: r.index,
+              text: r.text,
+              retrievedBy: r.retrieved_by,
+              denseSim: r.dense_sim,
+              bm25Score: r.bm25_score,
+              rrfScore: r.rrf_score,
+              rerankScore: r.rerank_score,
+              method: r.method,
+            }),
+          ),
+          usedChunkIds: res.used_chunk_ids || [],
+          llmModel: res.llm_model,
+          status: res.status || 'ai_draft',
+          notice: res.notice || '',
         })),
       );
   }

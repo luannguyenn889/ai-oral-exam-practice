@@ -232,3 +232,98 @@
   max-width: 520px;
 }
 
+.audio-ready-box__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.privacy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: #0c4a6e;
+  line-height: 1.5;
+}
+
+.privacy-notice .material-symbols-outlined {
+  font-size: 18px;
+  color: #0284c7;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.timer-bar-card {
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.timer-bar-card--warning {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.timer-bar-card--danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.timer-bar-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.timer-bar-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timer-bar-card__status .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.timer-bar-card__clock {
+  font-family: var(--font-family-mono);
+  font-size: var(--text-sm);
+}
+
+.timer-progress-track {
+  height: 8px;
+  background: rgba(15, 23, 42, 0.1);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.timer-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width 300ms linear;
+}
+
+.timer-bar-card--warning .timer-progress-fill {
+  background: #f59e0b;
+}
+
+.timer-bar-card--danger .timer-progress-fill {
+  background: #dc2626;
+}
+

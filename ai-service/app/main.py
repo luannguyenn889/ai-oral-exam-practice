@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import evaluations, question_import, rag, transcriptions
 from app.services import rag_service
+from app.services.gemini_client import get_gemini_api_keys, has_gemini_api_key
 
 
 @asynccontextmanager
@@ -87,6 +88,7 @@ def health() -> dict[str, Any]:
         "default_llm_model": settings.default_llm_model,
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model_name,
-        "gemini_key_configured": bool(settings.gemini_api_key.strip()),
+        "gemini_key_configured": has_gemini_api_key(),
+        "gemini_keys_count": len(get_gemini_api_keys()),
         "groq_key_configured": bool(settings.groq_api_key.strip()),
     }

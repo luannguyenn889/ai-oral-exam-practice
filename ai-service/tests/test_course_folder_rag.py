@@ -12,6 +12,8 @@ if str(AI_SERVICE_DIR) not in sys.path:
 from app.config import settings
 from app.routers import rag
 from app.services import rag_service
+from app.services.rag import folders as rag_folders
+from app.services.rag import store as rag_store
 
 
 def _run_sync(coro):
@@ -83,8 +85,9 @@ def run_course_folder_lifecycle_test() -> None:
 
         try:
             with (
-                patch.object(rag_service, "get_chroma_collection", return_value=fake_collection),
-                patch.object(rag_service, "embed_texts", side_effect=_fake_embed),
+                patch.object(rag_store, "get_chroma_collection", return_value=fake_collection),
+                patch.object(rag_folders, "get_chroma_collection", return_value=fake_collection),
+                patch.object(rag_store, "embed_texts", side_effect=_fake_embed),
             ):
                 # 1. Tạo thư mục học phần mới theo mã môn học (chuẩn hóa uppercase)
                 res_create = rag.sync_course_folder(

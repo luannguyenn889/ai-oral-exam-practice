@@ -122,6 +122,22 @@
       </div>
 
       <div class="score-bar__templates">
+        <button
+          type="button"
+          class="btn btn--sm btn--ai-suggest"
+          [disabled]="isSuggestingRubric || !question"
+          (click)="suggestRubricWithAi()"
+          title="AI chia 3-4 tiêu chí thang 10.0đ bám sát Đáp án mẫu và giáo trình RAG"
+        >
+          <span class="material-symbols-outlined" [class.spin]="isSuggestingRubric">
+            {{ isSuggestingRubric ? 'progress_activity' : 'auto_awesome' }}
+          </span>
+          {{
+            isSuggestingRubric
+              ? 'AI đang đề xuất Rubric...'
+              : 'AI đề xuất tiêu chí Rubric (10đ)'
+          }}
+        </button>
         <span class="template-label">Mẫu nhanh:</span>
         <button
           type="button"
@@ -139,6 +155,75 @@
         </button>
       </div>
     </div>
+
+    <!-- Human-in-the-loop Banner khi AI vừa đề xuất Rubric -->
+    @if (rubricReviewStatus === 'ai_draft' || rubricReviewStatus === 'approved') {
+      <div
+        class="hitl-rubric-banner"
+        [class.hitl-rubric-banner--approved]="rubricReviewStatus === 'approved'"
+      >
+        <div class="hitl-rubric-banner__info">
+          <span class="material-symbols-outlined">
+            {{ rubricReviewStatus === 'approved' ? 'verified' : 'auto_awesome' }}
+          </span>
+          <div>
+            @if (rubricReviewStatus === 'ai_draft') {
+              <strong>Human-in-the-loop · AI khởi tạo bộ tiêu chí Rubric (Chờ giảng viên duyệt):</strong>
+              <span>
+                Các tiêu chí bên dưới được AI đề xuất dựa trên Đáp án mẫu và {{ ragReferences.length }} đoạn giáo trình RAG.
+                Giảng viên hãy rà soát, điều chỉnh trọng số/hướng dẫn chấm và xác nhận duyệt trước khi lưu.
+              </span>
+            } @else {
+              <strong>Giảng viên đã duyệt Rubric{{ rubricApprovedAt ? ' lúc ' + rubricApprovedAt : '' }}:</strong>
+              <span>Bộ tiêu chí này sẵn sàng lưu làm chuẩn chấm điểm chính thức.</span>
+            }
+          </div>
+        </div>
+
+        <div class="hitl-rubric-banner__actions">
+          @if (ragReferences.length > 0) {
+            <button
+              type="button"
+              class="btn btn--sm btn--ghost"
+              (click)="showRagReferences = !showRagReferences"
+            >
+              <span class="material-symbols-outlined">menu_book</span>
+              {{ showRagReferences ? 'Ẩn' : 'Xem' }} {{ ragReferences.length }} đoạn RAG
+            </button>
+          }
+          @if (rubricReviewStatus === 'ai_draft') {
+            <button
+              type="button"
+              class="btn btn--sm btn--approve"
+              (click)="approveAiRubric()"
+            >
+              <span class="material-symbols-outlined">task_alt</span>
+              Xác nhận & Duyệt Rubric
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (showRagReferences && ragReferences.length > 0) {
+        <div class="card rag-ref-drawer">
+          <h4 class="rag-ref-drawer__title">
+            <span class="material-symbols-outlined">menu_book</span>
+            Đoạn trích giáo trình RAG AI đã tham khảo
+          </h4>
+          <div class="rag-ref-drawer__list">
+            @for (chunk of ragReferences; track chunk.chunkId) {
+              <div class="rag-ref-item">
+                <div class="rag-ref-item__meta">
+                  <strong>{{ chunk.source }}</strong>
+                  <span class="rag-ref-pill">{{ chunk.method }} · RRF {{ chunk.rrfScore | number: '1.3-3' }}</span>
+                </div>
+                <p class="rag-ref-item__text">{{ chunk.text }}</p>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    }
 
     <!-- Danh sách tiêu chí Rubric -->
     <main class="criteria-list">

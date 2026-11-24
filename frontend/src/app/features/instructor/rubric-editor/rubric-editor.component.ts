@@ -3,8 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { PracticeApi } from '../../../data-access/api/practice.api';
-import { Question, Rubric, RubricCriterion } from '../../../shared/models';
+import { AiRagService } from '../../../core/services/ai-rag.service';
+import { AuthService } from '../../../core/auth/auth.service';
+import { Course, Question, RagChunkResult, Rubric, RubricCriterion } from '../../../shared/models';
 import { ToastService } from '../../../core/services/toast.service';
+import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
 
 interface RubricDraft {
   criteria: RubricCriterion[];
@@ -23,12 +26,28 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
+  private aiRagService = inject(AiRagService);
+  private authService = inject(AuthService);
   private toastService = inject(ToastService);
 
   questionId = '';
   question: Question | null = null;
+  courses: Course[] = [];
   loading = false;
   saving = false;
+
+  // Human-in-the-loop: AI đề xuất Rubric thang 10 từ Đáp án mẫu & giáo trình RAG
+  isSuggestingRubric = false;
+  rubricReviewStatus: 'manual' | 'ai_draft' | 'approved' = 'manual';
+  rubricApprovedAt = '';
+  ragReferences: RagChunkResult[] = [];
+  showRagReferences = false;
+
+  get ragCourseCode(): string {
+    const cid = this.question?.courseId || '';
+    const found = this.courses.find((c) => c.id === cid || c.code === cid);
+    return (found?.code || cid || 'IT2030').trim().toUpperCase();
+  }
 
   criteria: RubricCriterion[] = [];
   gradingInstructions =
@@ -55,6 +74,11 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.questionId = this.route.snapshot.paramMap.get('questionId') || '';
+    const isAdmin = this.authService.getRole() === 'admin';
+    this.practiceApi.getCourses(!isAdmin).subscribe({
+      next: (list) => (this.courses = list || []),
+      error: () => (this.courses = []),
+    });
     if (this.questionId) {
       this.loadData(this.questionId);
     }
@@ -272,6 +296,64 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
       },
     ];
     this.onRubricChange();
+  }
+
+  suggestRubricWithAi(): void {
+    if (!this.question || !this.question.content?.trim()) {
+      this.toastService.warning('Chưa có nội dung câu hỏi để AI đề xuất Rubric.');
+      return;
+    }
+
+    this.isSuggestingRubric = true;
+    this.aiRagService
+      .suggestReferenceAnswer({
+        courseId: this.ragCourseCode,
+        question: this.question.content,
+        topic: this.question.topic || undefined,
+        referenceAnswer: this.question.sampleAnswer || undefined,
+        topK: 4,
+        searchMode: 'hybrid',
+        includeRubric: true,
+      })
+      .subscribe({
+        next: (res) => {
+          this.isSuggestingRubric = false;
+          this.ragReferences = res.ragReferences || [];
+          const suggested = res.suggestedCriteria || [];
+          if (suggested.length === 0) {
+            this.toastService.warning(
+              'AI chưa trả về tiêu chí Rubric phù hợp. Vui lòng thử lại hoặc dùng mẫu nhanh.',
+            );
+            return;
+          }
+
+          this.criteria = suggested.map((item, idx) => ({
+            id: `c-ai-${Date.now()}-${idx + 1}`,
+            name: cleanHtmlToPlainText(item.name),
+            description: cleanHtmlToPlainText(item.description),
+            maxScore: Math.round((Number(item.maxScore) || 0) * 10) / 10,
+          }));
+          this.rubricReviewStatus = 'ai_draft';
+          this.rubricApprovedAt = '';
+          this.onRubricChange();
+          this.toastService.info(
+            `AI đã đề xuất ${this.criteria.length} tiêu chí thang 10.0đ dựa trên Đáp án mẫu & giáo trình RAG. Giảng viên vui lòng rà soát và duyệt.`,
+          );
+        },
+        error: () => {
+          this.isSuggestingRubric = false;
+          this.toastService.error(
+            'Không thể kết nối AI Service để đề xuất Rubric. Hãy kiểm tra AI Service đang chạy.',
+          );
+        },
+      });
+  }
+
+  approveAiRubric(): void {
+    this.rubricReviewStatus = 'approved';
+    const now = new Date();
+    this.rubricApprovedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.toastService.success('Giảng viên đã duyệt bộ tiêu chí Rubric.');
   }
 
   saveRubric(): void {

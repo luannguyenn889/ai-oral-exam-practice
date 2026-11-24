@@ -7,6 +7,7 @@ import {
   Evaluation,
   ExtractedQuestion,
   QuestionExtractResult,
+  InstructorPracticeRecord,
 } from '../../shared/models';
 
 export abstract class PracticeApi {
@@ -21,9 +22,21 @@ export abstract class PracticeApi {
     sessionId: string,
     transcript: string,
   ): Observable<PracticeSession>;
-  abstract requestEvaluation(sessionId: string): Observable<{ status: string; jobId?: string }>;
+  abstract requestEvaluation(
+    sessionId: string,
+  ): Observable<{ status: string; jobId?: string; sessionId?: string; persisted?: boolean }>;
   abstract getEvaluation(sessionId: string): Observable<Evaluation>;
   abstract getPracticeHistory(userId?: string): Observable<PracticeSession[]>;
+  abstract fetchProtectedAudioBlob(audioUrl: string): Observable<Blob>;
+  abstract getInstructorPracticeRecords(
+    courseId?: string,
+    needsReviewOnly?: boolean,
+  ): Observable<InstructorPracticeRecord[]>;
+  abstract reviewPracticeRecord(
+    recordId: string,
+    instructorScore: number,
+    instructorNotes: string,
+  ): Observable<InstructorPracticeRecord>;
   abstract saveCourse(course: Partial<Course>): Observable<Course>;
   abstract deleteCourse(courseId: string): Observable<void>;
   abstract saveQuestion(question: Partial<Question>): Observable<Question>;

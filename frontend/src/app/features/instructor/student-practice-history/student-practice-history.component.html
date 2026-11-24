@@ -1,0 +1,472 @@
+<div class="history-page">
+  <header class="page-header">
+    <div>
+      <span class="page-header__badge">
+        <span class="material-symbols-outlined">assignment_turned_in</span>
+        Giám sát &amp; Human-in-the-loop
+      </span>
+      <h1 class="page-header__title">Kết quả luyện tập của sinh viên</h1>
+      <p class="page-header__subtitle">
+        Theo dõi bài làm thực tế của sinh viên thuộc học phần bạn phụ trách, xem bản ghi câu trả lời (Transcript), chi tiết AI chấm theo Rubric, dẫn chứng RAG và rà soát chốt điểm cuối cùng.
+      </p>
+    </div>
+
+    <button type="button" class="btn btn--secondary" (click)="loadData()" [disabled]="loading">
+      <span class="material-symbols-outlined">refresh</span>
+      Làm mới dữ liệu
+    </button>
+  </header>
+
+  <!-- Thẻ thống kê nhanh -->
+  <section class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--primary">
+        <span class="material-symbols-outlined">fact_check</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Tổng lượt luyện tập</div>
+        <div class="stat-card__value">{{ totalCount }} lượt</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--info">
+        <span class="material-symbols-outlined">analytics</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Điểm trung bình</div>
+        <div class="stat-card__value">{{ averageScoreDisplay }} / 10</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--warning">
+        <span class="material-symbols-outlined">rate_review</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Cần giảng viên rà soát</div>
+        <div class="stat-card__value">{{ needsReviewCount }} bài</div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-card__icon stat-card__icon--success">
+        <span class="material-symbols-outlined">verified</span>
+      </div>
+      <div>
+        <div class="stat-card__label">Đã duyệt chốt điểm</div>
+        <div class="stat-card__value">{{ reviewedCount }} bài</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Thanh lọc & tìm kiếm -->
+  <section class="controls-bar" #recordsTop>
+    <div class="controls-bar__top">
+      <div class="controls-bar__search">
+        <span class="material-symbols-outlined search-icon">search</span>
+        <input
+          type="text"
+          placeholder="Tìm theo tên sinh viên, MSSV, email hoặc tiêu đề câu hỏi..."
+          [(ngModel)]="searchQuery"
+          (ngModelChange)="onFilterChange()"
+        />
+        @if (searchQuery) {
+          <button type="button" class="clear-btn" (click)="clearSearch()" aria-label="Xóa tìm kiếm">
+            <span class="material-symbols-outlined">cancel</span>
+          </button>
+        }
+      </div>
+
+      <select
+        class="course-filter-select"
+        [(ngModel)]="selectedCourseId"
+        (ngModelChange)="onFilterChange()"
+        aria-label="Lọc theo học phần"
+      >
+        <option value="">Tất cả học phần của tôi ({{ courses.length }} môn)</option>
+        @for (c of courses; track c.id) {
+          <option [value]="c.id">{{ c.code }} — {{ c.name }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="controls-bar__bottom">
+      <div class="status-pills" role="group" aria-label="Lọc theo trạng thái rà soát">
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="statusFilter === 'all'"
+          [class.btn--ghost]="statusFilter !== 'all'"
+          (click)="setStatusFilter('all')"
+        >
+          Tất cả ({{ totalCount }})
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="statusFilter === 'needs_review'"
+          [class.btn--ghost]="statusFilter !== 'needs_review'"
+          (click)="setStatusFilter('needs_review')"
+        >
+          Cần rà soát ({{ needsReviewCount }})
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="statusFilter === 'reviewed'"
+          [class.btn--ghost]="statusFilter !== 'reviewed'"
+          (click)="setStatusFilter('reviewed')"
+        >
+          Đã duyệt ({{ reviewedCount }})
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--primary]="statusFilter === 'ai_graded'"
+          [class.btn--ghost]="statusFilter !== 'ai_graded'"
+          (click)="setStatusFilter('ai_graded')"
+        >
+          AI đã chấm
+        </button>
+      </div>
+
+      <span class="controls-bar__meta">
+        Đang hiển thị {{ filteredRecords.length }} kết quả
+      </span>
+    </div>
+  </section>
+
+  <!-- Danh sách kết quả -->
+  @if (loading) {
+    <div class="records-list">
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+      <app-skeleton variant="card"></app-skeleton>
+    </div>
+  } @else if (error) {
+    <app-error-state
+      title="Không thể tải kết quả luyện tập"
+      [message]="error"
+      (retry)="loadData()"
+    ></app-error-state>
+  } @else if (filteredRecords.length === 0) {
+    <app-empty-state
+      icon="assignment"
+      [title]="
+        searchQuery || selectedCourseId || statusFilter !== 'all'
+          ? 'Không tìm thấy bài làm phù hợp'
+          : 'Chưa có lượt luyện tập nào của sinh viên'
+      "
+      [description]="
+        searchQuery || selectedCourseId || statusFilter !== 'all'
+          ? 'Thử xóa bớt bộ lọc để xem toàn bộ lịch sử làm bài của sinh viên.'
+          : 'Khi sinh viên hoàn thành phiên ôn luyện trên học phần của bạn, kết quả chấm điểm và transcript sẽ tự động hiển thị tại đây.'
+      "
+      [actionLabel]="
+        searchQuery || selectedCourseId || statusFilter !== 'all' ? 'Đặt lại bộ lọc' : undefined
+      "
+      (action)="resetFilters()"
+    ></app-empty-state>
+  } @else {
+    <div class="records-list">
+      @for (r of paginatedRecords; track r.id) {
+        <article class="card record-card" [class.record-card--attention]="r.needsHumanReview">
+          <div class="record-card__main">
+            <div class="record-card__meta">
+              @if (r.courseCode) {
+                <span class="course-badge">{{ r.courseCode }}</span>
+              }
+              <span [class]="getStatusBadgeClass(r)">{{ getStatusLabel(r) }}</span>
+              <span class="record-date">{{ r.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+
+            <h2 class="record-card__title">{{ r.questionTitle }}</h2>
+
+            <div class="record-student">
+              <span class="material-symbols-outlined">person</span>
+              <strong>{{ r.studentName }}</strong>
+              @if (r.studentCode) {
+                <span class="student-code">({{ r.studentCode }})</span>
+              }
+              @if (r.studentDepartment) {
+                <span class="student-dept">· {{ r.studentDepartment }}</span>
+              }
+            </div>
+
+            @if (r.transcript) {
+              <p class="record-transcript">"{{ r.transcript }}"</p>
+            }
+          </div>
+
+          <div class="record-card__side">
+            <div class="score-summary">
+              <div class="score-item">
+                <span class="score-item__label">Điểm AI</span>
+                <span class="score-item__val">{{ r.totalScore ?? 0 }} / {{ r.maxScore }}</span>
+              </div>
+              @if (r.reviewedByInstructor && r.instructorScore !== null && r.instructorScore !== undefined) {
+                <div class="score-item score-item--final">
+                  <span class="score-item__label">GV chốt</span>
+                  <span class="score-item__val">{{ r.instructorScore }} / {{ r.maxScore }}</span>
+                </div>
+              }
+            </div>
+
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              (click)="openReviewModal(r)"
+            >
+              <span class="material-symbols-outlined">visibility</span>
+              {{ r.reviewedByInstructor ? 'Xem & Cập nhật' : 'Xem chi tiết & Duyệt' }}
+            </button>
+          </div>
+        </article>
+      }
+    </div>
+
+    <app-pagination
+      [totalItems]="filteredRecords.length"
+      [currentPage]="safeCurrentPage"
+      [pageSize]="pageSize"
+      [pageSizeOptions]="[5, 10, 20, 50]"
+      itemLabel="lượt làm bài"
+      (pageChange)="onPageChange($event)"
+      (pageSizeChange)="onPageSizeChange($event)"
+    ></app-pagination>
+  }
+
+  <!-- Modal Chi tiết & Rà soát Human-in-the-loop -->
+  @if (selectedRecord) {
+    <div class="modal-backdrop" (click)="closeReviewModal()">
+      <div class="modal-dialog modal-dialog--wide" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <div class="modal-header__badges">
+              @if (selectedRecord.courseCode) {
+                <span class="course-badge">{{ selectedRecord.courseCode }}</span>
+              }
+              <span [class]="getStatusBadgeClass(selectedRecord)">
+                {{ getStatusLabel(selectedRecord) }}
+              </span>
+            </div>
+            <h2 class="modal-title">{{ selectedRecord.questionTitle }}</h2>
+            <p class="modal-subtitle">
+              Sinh viên: <strong>{{ selectedRecord.studentName }}</strong>
+              @if (selectedRecord.studentCode) {
+                — MSSV: {{ selectedRecord.studentCode }}
+              }
+              · {{ selectedRecord.studentEmail }} · Nộp lúc
+              {{ selectedRecord.createdAt | date: 'dd/MM/yyyy HH:mm' }}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="modal-close-btn"
+            (click)="closeReviewModal()"
+            aria-label="Đóng"
+          >
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- 1. Transcript sinh viên -->
+          <section class="detail-box">
+            <h3 class="detail-box__title">
+              <span class="material-symbols-outlined">record_voice_over</span>
+              Câu trả lời của sinh viên (Transcript)
+            </h3>
+            <p class="detail-transcript">
+              {{ selectedRecord.transcript || '(Không có nội dung transcript)' }}
+            </p>
+          </section>
+
+          <!-- 2. Đánh giá chi tiết của AI -->
+          @if (selectedRecord.evaluation) {
+            <section class="detail-box">
+              <div class="detail-box__head">
+                <h3 class="detail-box__title">
+                  <span class="material-symbols-outlined">psychology</span>
+                  Đánh giá của AI ({{ selectedRecord.evaluation.totalScore }} /
+                  {{ selectedRecord.evaluation.maxScore }} điểm)
+                </h3>
+                @if (selectedRecord.evaluation.llmModel) {
+                  <span class="model-tag">{{ selectedRecord.evaluation.llmModel }}</span>
+                }
+              </div>
+
+              @if (selectedRecord.evaluation.summary) {
+                <p class="detail-summary">{{ selectedRecord.evaluation.summary }}</p>
+              }
+
+              @if (selectedRecord.evaluation.uncertaintyNotes.length > 0) {
+                <div class="uncertainty-box">
+                  <strong>
+                    <span class="material-symbols-outlined">warning</span>
+                    Lưu ý cần giảng viên kiểm tra:
+                  </strong>
+                  <ul>
+                    @for (note of selectedRecord.evaluation.uncertaintyNotes; track $index) {
+                      <li>{{ note }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+
+              @if (selectedRecord.evaluation.criteria.length > 0) {
+                <div class="criteria-breakdown">
+                  @for (c of selectedRecord.evaluation.criteria; track $index) {
+                    <div class="criterion-row">
+                      <div class="criterion-row__head">
+                        <strong>Tiêu chí #{{ $index + 1 }} ({{ c.criterionId }})</strong>
+                        <span class="criterion-score">{{ c.score }} / {{ c.maxScore }}đ</span>
+                      </div>
+                      @if (c.feedback) {
+                        <p class="criterion-feedback">{{ c.feedback }}</p>
+                      }
+                      @if (c.evidence) {
+                        <p class="criterion-evidence">
+                          <em>Trích dẫn câu trả lời:</em> "{{ c.evidence }}"
+                        </p>
+                      }
+                      @if (c.missingOrIncorrect && c.missingOrIncorrect.length > 0) {
+                        <p class="criterion-missing">
+                          <em>Ý thiếu / chưa chuẩn:</em> {{ c.missingOrIncorrect.join('; ') }}
+                        </p>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              @if (selectedRecord.evaluation.ragReferences && selectedRecord.evaluation.ragReferences.length > 0) {
+                <div class="rag-refs-box">
+                  <h4>Nguồn giáo trình RAG đã đối chiếu:</h4>
+                  @for (ref of selectedRecord.evaluation.ragReferences; track $index) {
+                    <div class="rag-ref-item">
+                      <div class="rag-ref-item__meta">
+                        <span>#{{ $index + 1 }} · {{ ref.source }}</span>
+                        <span>{{ ref.retrievedBy }}</span>
+                      </div>
+                      <p>{{ ref.textPreview }}</p>
+                    </div>
+                  }
+                </div>
+              }
+            </section>
+          }
+
+          <!-- 3. Khối Giảng viên chốt điểm (Human-in-the-loop) -->
+          <section class="review-box">
+            <div class="review-box__header">
+              <h3 class="detail-box__title">
+                <span class="material-symbols-outlined">gavel</span>
+                Quyết định của Giảng viên (Human-in-the-loop)
+              </h3>
+              @if (selectedRecord.totalScore !== null && selectedRecord.totalScore !== undefined) {
+                <span class="ai-score-pill">
+                  AI chấm: <strong>{{ selectedRecord.totalScore }} / {{ selectedRecord.maxScore }}</strong>
+                </span>
+              }
+            </div>
+
+            @if (selectedRecord.reviewedByInstructor && selectedRecord.reviewedAt) {
+              <p class="reviewed-meta">
+                <span class="material-symbols-outlined">verified</span>
+                <span>
+                  Đã duyệt bởi <strong>{{ selectedRecord.reviewerName || 'Giảng viên' }}</strong> lúc
+                  {{ selectedRecord.reviewedAt | date: 'dd/MM/yyyy HH:mm' }}.
+                </span>
+              </p>
+            }
+
+            <div class="review-form-stack">
+              <div class="review-score-panel">
+                <label for="review-score" class="form-label">
+                  Điểm giảng viên chốt (thang 0 – {{ selectedRecord.maxScore }})
+                </label>
+
+                <div class="review-score-row">
+                  <div class="score-input-group">
+                    <input
+                      id="review-score"
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      [max]="selectedRecord.maxScore"
+                      class="score-input-group__field"
+                      [(ngModel)]="reviewScore"
+                    />
+                    <span class="score-input-group__suffix">/ {{ selectedRecord.maxScore }}</span>
+                  </div>
+
+                  @if (selectedRecord.totalScore !== null && selectedRecord.totalScore !== undefined) {
+                    <button
+                      type="button"
+                      class="btn btn--ghost btn--sm"
+                      (click)="applyAiScore()"
+                      title="Khôi phục đúng bằng mức điểm AI đã đề xuất"
+                    >
+                      <span class="material-symbols-outlined">replay</span>
+                      Lấy điểm AI ({{ selectedRecord.totalScore }})
+                    </button>
+
+                    @if (scoreDelta !== null) {
+                      <span
+                        class="delta-pill"
+                        [class.delta-pill--match]="scoreDelta === 0"
+                        [class.delta-pill--diff]="scoreDelta !== 0"
+                      >
+                        @if (scoreDelta === 0) {
+                          Đồng thuận với AI
+                        } @else {
+                          Lệch {{ scoreDelta > 0 ? '+' : '' }}{{ scoreDelta }}đ
+                        }
+                      </span>
+                    }
+                  }
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="review-notes" class="form-label">
+                  Nhận xét / Ghi chú chuyên môn của Giảng viên
+                </label>
+                <textarea
+                  id="review-notes"
+                  rows="4"
+                  class="form-textarea"
+                  placeholder="Ghi nhận lý do điều chỉnh điểm hoặc nhận xét bổ sung cho sinh viên..."
+                  [(ngModel)]="reviewNotes"
+                ></textarea>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            (click)="closeReviewModal()"
+            [disabled]="isSavingReview"
+          >
+            Đóng
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary"
+            (click)="submitReview()"
+            [disabled]="isSavingReview"
+          >
+            <span class="material-symbols-outlined">check_circle</span>
+            {{ isSavingReview ? 'Đang lưu...' : 'Xác nhận chốt điểm' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

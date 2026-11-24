@@ -62,6 +62,7 @@ from app.services.rag.folders import (
     rename_course_folder,
 )
 from app.services.rag.store import (
+    _bm25_cache,
     format_rag_context,
     get_bm25_index,
     get_chroma_collection,
@@ -73,8 +74,15 @@ from app.services.rag.store import (
     query_relevant_chunks,
     warmup_rag_background,
 )
+from app.services.rag.jobs import (
+    get_active_index_job,
+    get_index_job,
+    start_index_job,
+)
+from app.services.rag.suggest import HITL_NOTICE, suggest_reference_answer
 
 __all__ = [
+    "_bm25_cache",
     "CHUNKING_STRATEGIES",
     "CHUNKING_STRATEGY_LABELS",
     "DEFAULT_CHUNKING_STRATEGY",
@@ -109,6 +117,11 @@ __all__ = [
     "normalize_embedding_provider",
     "query_relevant_chunks",
     "rename_course_folder",
+    "get_active_index_job",
+    "get_index_job",
+    "start_index_job",
+    "suggest_reference_answer",
+    "HITL_NOTICE",
     "tokenize_text",
     "warmup_rag_background",
 ]

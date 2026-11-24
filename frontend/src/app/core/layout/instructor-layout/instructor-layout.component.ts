@@ -19,6 +19,8 @@ export class InstructorLayoutComponent {
     { label: 'Quản lý kho tài liệu', path: '/instructor/documents', icon: 'menu_book' },
     { label: 'Danh sách câu hỏi', path: '/instructor/questions', icon: 'quiz' },
     { label: 'Tạo câu hỏi', path: '/instructor/questions/new', icon: 'add_circle' },
+    { label: 'Kết quả sinh viên', path: '/instructor/student-history', icon: 'assignment_turned_in' },
+    { label: 'Thống kê lỗ hổng', path: '/instructor/analytics', icon: 'analytics' },
   ];
   readonly footerText = '© 2026 Cổng thông tin Giảng viên — Hệ Thống Ôn Luyện Vấn Đáp AI.';
 }

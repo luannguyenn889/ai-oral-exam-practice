@@ -45,6 +45,14 @@ class ExtractedQuestionItem(BaseModel):
         default_factory=list,
         description="Danh sách cảnh báo cần lưu ý (màu vàng)",
     )
+    ai_generated_answer: bool = Field(
+        default=False,
+        description="True nếu Đáp án mẫu được AI khởi tạo tự động (cần giảng viên rà soát và duyệt)",
+    )
+    ai_generated_rubric: bool = Field(
+        default=False,
+        description="True nếu Rubric được AI đề xuất tự động (cần giảng viên rà soát và duyệt)",
+    )
 
 
 class QuestionExtractResponse(BaseModel):

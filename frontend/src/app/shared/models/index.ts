@@ -91,6 +91,9 @@ export interface ExtractedQuestion {
   status: 'valid' | 'warning' | 'error';
   errors: string[];
   warnings: string[];
+  aiGeneratedAnswer?: boolean;
+  aiGeneratedRubric?: boolean;
+  instructorApproved?: boolean;
 }
 
 export interface QuestionExtractResult {
@@ -141,6 +144,7 @@ export interface PracticeSession {
   id: string;
   questionId: string;
   courseId?: string;
+  courseCode?: string;
   questionTitle?: string;
   courseName?: string;
   userId: string;
@@ -153,6 +157,11 @@ export interface PracticeSession {
   correctionModel?: string;
   isTranscriptConfirmed: boolean;
   evaluation?: Evaluation;
+  reviewedByInstructor?: boolean;
+  instructorScore?: number | null;
+  instructorNotes?: string | null;
+  reviewerName?: string | null;
+  reviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -196,6 +205,23 @@ export interface RagSearchResponse {
   formattedContext: string;
 }
 
+export interface SuggestedRubricCriterion {
+  name: string;
+  description: string;
+  maxScore: number;
+}
+
+export interface RagSuggestAnswerResponse {
+  courseId: string;
+  sampleAnswer: string;
+  suggestedCriteria: SuggestedRubricCriterion[];
+  ragReferences: RagChunkResult[];
+  usedChunkIds: string[];
+  llmModel: string;
+  status: 'ai_draft';
+  notice: string;
+}
+
 export interface AiHealthStatus {
   status: string;
   service: string;
@@ -213,6 +239,33 @@ export interface ApiError {
   message: string;
   details?: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface InstructorPracticeRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  studentCode?: string | null;
+  studentDepartment?: string | null;
+  courseId?: string | null;
+  courseCode?: string | null;
+  courseName?: string | null;
+  questionId?: string | null;
+  questionTitle: string;
+  status: string;
+  transcript?: string | null;
+  audioUrl?: string | null;
+  totalScore?: number | null;
+  maxScore: number;
+  needsHumanReview: boolean;
+  evaluation?: Evaluation | null;
+  reviewedByInstructor: boolean;
+  instructorScore?: number | null;
+  instructorNotes?: string | null;
+  reviewerName?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
 }
 
 export interface DriveDocument {

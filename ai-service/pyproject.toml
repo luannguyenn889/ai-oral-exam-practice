@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+onnx-cpu = [
+    "optimum[onnxruntime]>=1.20.0",
+]
 local-stt = [
     "openai-whisper>=20231117",
     "transformers>=4.40.0",

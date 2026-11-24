@@ -366,6 +366,8 @@ def _items_to_questions(items: list[dict]) -> List[ExtractedQuestionItem]:
                 status="valid",
                 errors=[],
                 warnings=[],
+                ai_generated_answer=bool(it.get("answer_by_ai")),
+                ai_generated_rubric=bool(it.get("rubric_by_ai") or not it["criteria"]),
             )
         )
     return questions

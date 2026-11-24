@@ -10,6 +10,7 @@ import {
   Evaluation,
   ExtractedQuestion,
   QuestionExtractResult,
+  InstructorPracticeRecord,
 } from '../../shared/models';
 import { environment } from '../../../environments/environment';
 
@@ -41,16 +42,28 @@ export class HttpPracticeApi extends PracticeApi {
   }
 
   override getPracticeSession(sessionId: string): Observable<PracticeSession> {
-    return this.http.get<PracticeSession>(`${this.baseUrl}/practice/sessions/${sessionId}`);
+    return this.http
+      .get<any>(`${this.baseUrl}/practice-records/${encodeURIComponent(sessionId)}`)
+      .pipe(map((raw) => this.recordToPracticeSession(this.mapPracticeRecord(raw))));
   }
 
   override uploadAudio(sessionId: string, audioFile: Blob): Observable<PracticeSession> {
     const formData = new FormData();
-    formData.append('audio', audioFile, 'recording.webm');
-    return this.http.post<PracticeSession>(
-      `${this.baseUrl}/practice/sessions/${sessionId}/audio`,
-      formData,
-    );
+    formData.append('file', audioFile, `recording_${sessionId}.webm`);
+    return this.http
+      .post<{ audioUrl: string }>(`${this.baseUrl}/practice-records/audio`, formData)
+      .pipe(
+        map((res) => ({
+          id: sessionId,
+          questionId: '',
+          userId: '',
+          status: 'uploaded' as const,
+          audioUrl: res.audioUrl,
+          isTranscriptConfirmed: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })),
+      );
   }
 
   override requestTranscription(sessionId: string): Observable<{ status: string; jobId?: string }> {
@@ -70,22 +83,40 @@ export class HttpPracticeApi extends PracticeApi {
     );
   }
 
-  override requestEvaluation(sessionId: string): Observable<{ status: string; jobId?: string }> {
-    return this.http.post<{ status: string; jobId?: string }>(
+  override requestEvaluation(
+    sessionId: string,
+  ): Observable<{ status: string; jobId?: string; sessionId?: string; persisted?: boolean }> {
+    return this.http.post<{ status: string; jobId?: string; sessionId?: string; persisted?: boolean }>(
       `${this.baseUrl}/practice/sessions/${sessionId}/evaluate`,
       {},
     );
   }
 
   override getEvaluation(sessionId: string): Observable<Evaluation> {
-    return this.http.get<Evaluation>(`${this.baseUrl}/practice/sessions/${sessionId}/evaluation`);
+    return this.getPracticeSession(sessionId).pipe(
+      map((session) => {
+        if (!session.evaluation) {
+          throw new Error('Phiên luyện tập chưa có kết quả chấm điểm.');
+        }
+        return session.evaluation;
+      }),
+    );
   }
 
-  override getPracticeHistory(userId?: string): Observable<PracticeSession[]> {
-    const url = userId
-      ? `${this.baseUrl}/practice/history?userId=${userId}`
-      : `${this.baseUrl}/practice/history`;
-    return this.http.get<PracticeSession[]>(url);
+  override getPracticeHistory(_userId?: string): Observable<PracticeSession[]> {
+    return this.http
+      .get<any[]>(`${this.baseUrl}/practice-records/me`)
+      .pipe(
+        map((rows) =>
+          (rows || []).map((raw) => this.recordToPracticeSession(this.mapPracticeRecord(raw))),
+        ),
+      );
+  }
+
+  override fetchProtectedAudioBlob(audioUrl: string): Observable<Blob> {
+    const baseOrigin = this.baseUrl.replace(/\/api\/?$/, '');
+    const resolvedUrl = audioUrl.startsWith('/api/') ? `${baseOrigin}${audioUrl}` : audioUrl;
+    return this.http.get(resolvedUrl, { responseType: 'blob' });
   }
 
   override saveCourse(course: Partial<Course>): Observable<Course> {
@@ -144,6 +175,9 @@ export class HttpPracticeApi extends PracticeApi {
           status: q.status || 'valid',
           errors: q.errors || [],
           warnings: q.warnings || [],
+          aiGeneratedAnswer: !!q.ai_generated_answer,
+          aiGeneratedRubric: !!q.ai_generated_rubric,
+          instructorApproved: false,
         }));
 
         return {
@@ -192,5 +226,96 @@ export class HttpPracticeApi extends PracticeApi {
     return this.http.get(`${this.baseUrl}/questions/import/template`, {
       responseType: 'blob',
     });
+  }
+
+  override getInstructorPracticeRecords(
+    courseId?: string,
+    needsReviewOnly?: boolean,
+  ): Observable<InstructorPracticeRecord[]> {
+    const queryParts: string[] = [];
+    if (courseId) {
+      queryParts.push(`courseId=${encodeURIComponent(courseId)}`);
+    }
+    if (needsReviewOnly) {
+      queryParts.push('needsReviewOnly=true');
+    }
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    return this.http
+      .get<any[]>(`${this.baseUrl}/practice-records/instructor${qs}`)
+      .pipe(map((rows) => (rows || []).map((r) => this.mapPracticeRecord(r))));
+  }
+
+  override reviewPracticeRecord(
+    recordId: string,
+    instructorScore: number,
+    instructorNotes: string,
+  ): Observable<InstructorPracticeRecord> {
+    return this.http
+      .put<any>(`${this.baseUrl}/practice-records/${encodeURIComponent(recordId)}/review`, {
+        instructorScore,
+        instructorNotes,
+      })
+      .pipe(map((r) => this.mapPracticeRecord(r)));
+  }
+
+  private mapPracticeRecord(raw: any): InstructorPracticeRecord {
+    let evaluation: Evaluation | null = null;
+    if (raw?.evaluationJson) {
+      try {
+        evaluation = JSON.parse(raw.evaluationJson) as Evaluation;
+      } catch {
+        evaluation = null;
+      }
+    }
+    return {
+      id: String(raw.id),
+      studentId: String(raw.studentId),
+      studentName: raw.studentName || 'Sinh viên',
+      studentEmail: raw.studentEmail || '',
+      studentCode: raw.studentCode ?? null,
+      studentDepartment: raw.studentDepartment ?? null,
+      courseId: raw.courseId ? String(raw.courseId) : null,
+      courseCode: raw.courseCode ?? null,
+      courseName: raw.courseName ?? null,
+      questionId: raw.questionId ? String(raw.questionId) : null,
+      questionTitle: raw.questionTitle || 'Câu hỏi vấn đáp',
+      status: raw.status || 'completed',
+      transcript: raw.transcript ?? null,
+      audioUrl: raw.audioUrl ?? null,
+      totalScore: raw.totalScore ?? null,
+      maxScore: raw.maxScore ?? 10,
+      needsHumanReview: Boolean(raw.needsHumanReview),
+      evaluation,
+      reviewedByInstructor: Boolean(raw.reviewedByInstructor),
+      instructorScore: raw.instructorScore ?? null,
+      instructorNotes: raw.instructorNotes ?? null,
+      reviewerName: raw.reviewerName ?? null,
+      reviewedAt: raw.reviewedAt ?? null,
+      createdAt: raw.createdAt || new Date().toISOString(),
+    };
+  }
+
+  private recordToPracticeSession(rec: InstructorPracticeRecord): PracticeSession {
+    return {
+      id: rec.id,
+      questionId: rec.questionId || '',
+      courseId: rec.courseId || rec.courseCode || undefined,
+      courseCode: rec.courseCode || undefined,
+      questionTitle: rec.questionTitle,
+      courseName: rec.courseName || undefined,
+      userId: rec.studentId,
+      status: 'completed',
+      audioUrl: rec.audioUrl || undefined,
+      transcript: rec.transcript || undefined,
+      isTranscriptConfirmed: true,
+      evaluation: rec.evaluation || undefined,
+      reviewedByInstructor: rec.reviewedByInstructor,
+      instructorScore: rec.instructorScore ?? null,
+      instructorNotes: rec.instructorNotes ?? null,
+      reviewerName: rec.reviewerName ?? null,
+      reviewedAt: rec.reviewedAt ?? null,
+      createdAt: rec.createdAt,
+      updatedAt: rec.reviewedAt || rec.createdAt,
+    };
   }
 }

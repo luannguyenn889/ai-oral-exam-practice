@@ -939,6 +939,19 @@
   margin-top: 2px;
 }
 
+.rag-sync-banner__metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rag-sync-banner__pct {
+  font-family: var(--font-family-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: #1e40af;
+}
+
 .rag-sync-banner__timer {
   font-family: var(--font-family-mono);
   font-size: var(--text-xs);
@@ -950,11 +963,18 @@
 }
 
 .rag-sync-banner__bar {
-  height: 5px;
+  height: 6px;
   background: #dbeafe;
   border-radius: var(--radius-full);
   overflow: hidden;
   position: relative;
+}
+
+.rag-sync-banner__bar-fill--determinate {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width 350ms ease;
 }
 
 .rag-sync-banner__bar-fill {

@@ -84,7 +84,11 @@
             title="Quét và lập chỉ mục lại toàn bộ tài liệu trên Server theo cấu hình hiện tại"
           >
             <span class="material-symbols-outlined" [class.spin]="isSyncing">sync</span>
-            {{ isSyncing ? 'Đang đồng bộ (' + formatElapsed(syncElapsedSeconds) + ')...' : 'Đồng bộ chỉ mục Server' }}
+            {{
+              isSyncing
+                ? 'Đang đồng bộ ' + syncPercent + '% (' + formatElapsed(syncElapsedSeconds) + ')'
+                : 'Đồng bộ chỉ mục Server'
+            }}
           </button>
           <button class="btn btn--primary" (click)="connectGoogleDrive()" [disabled]="googleAccessToken !== null">
             <span class="material-symbols-outlined">link</span>
@@ -101,19 +105,30 @@
         <div class="rag-sync-banner__left">
           <span class="material-symbols-outlined spin">progress_activity</span>
           <div>
-            <strong>Đang đồng bộ &amp; lập chỉ mục lại kho RAG ({{ ragCourseCode }})...</strong>
+            <strong>
+              Đang đồng bộ &amp; lập chỉ mục kho RAG ({{ ragCourseCode }}) — {{ syncPercent }}%
+            </strong>
             <div class="rag-sync-banner__sub">
-              Chiến lược: <b>{{ chunkingStrategyLabel }}</b> · Embedding: <b>{{ embeddingProvider }}</b>
-              @if (chunkingStrategy === 'semantic') {
-                · Đang tách câu và tính độ tương đồng ngữ nghĩa...
+              @if (syncMessage) {
+                <span>{{ syncMessage }}</span>
+              } @else {
+                <span>
+                  Chiến lược: <b>{{ chunkingStrategyLabel }}</b> · Embedding: <b>{{ embeddingProvider }}</b>
+                </span>
               }
             </div>
           </div>
         </div>
-        <span class="rag-sync-banner__timer">{{ formatElapsed(syncElapsedSeconds) }}</span>
+        <div class="rag-sync-banner__metrics">
+          <span class="rag-sync-banner__pct">{{ syncPercent }}%</span>
+          <span class="rag-sync-banner__timer">{{ formatElapsed(syncElapsedSeconds) }}</span>
+        </div>
       </div>
       <div class="rag-sync-banner__bar">
-        <div class="rag-sync-banner__bar-fill"></div>
+        <div
+          class="rag-sync-banner__bar-fill--determinate"
+          [style.width.%]="syncPercent"
+        ></div>
       </div>
     </div>
   }

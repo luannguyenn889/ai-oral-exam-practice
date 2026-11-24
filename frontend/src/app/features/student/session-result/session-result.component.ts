@@ -26,6 +26,32 @@ export class SessionResultComponent implements OnInit, OnDestroy {
   loading = true;
   error: string | null = null;
   isSpeaking = false;
+  audioPlaybackUrl: string | null = null;
+  private ownedAudioObjectUrl: string | null = null;
+
+  get hasInstructorReview(): boolean {
+    return Boolean(this.session?.reviewedByInstructor);
+  }
+
+  get effectiveScore(): number {
+    if (
+      this.session?.reviewedByInstructor &&
+      this.session.instructorScore !== null &&
+      this.session.instructorScore !== undefined
+    ) {
+      return this.session.instructorScore;
+    }
+    return this.evaluation?.totalScore ?? 0;
+  }
+
+  get courseQuestionsLink(): string[] {
+    const cid = this.question?.courseId || this.session?.courseId;
+    return cid ? ['/student/courses', cid, 'questions'] : ['/student/courses'];
+  }
+
+  get courseLabel(): string {
+    return this.session?.courseCode || this.session?.courseName || this.session?.courseId || 'Học phần';
+  }
 
   ngOnInit(): void {
     this.sessionId = this.route.snapshot.paramMap.get('sessionId') || '';
@@ -34,6 +60,35 @@ export class SessionResultComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopSpeaking();
+    this.revokeAudioUrl();
+  }
+
+  private revokeAudioUrl(): void {
+    if (this.ownedAudioObjectUrl) {
+      URL.revokeObjectURL(this.ownedAudioObjectUrl);
+      this.ownedAudioObjectUrl = null;
+    }
+    this.audioPlaybackUrl = null;
+  }
+
+  private loadAudioIfAvailable(audioUrl?: string): void {
+    this.revokeAudioUrl();
+    if (!audioUrl) return;
+    if (audioUrl.startsWith('blob:')) {
+      this.audioPlaybackUrl = audioUrl;
+      return;
+    }
+    this.practiceApi.fetchProtectedAudioBlob(audioUrl).subscribe({
+      next: (blob) => {
+        if (blob && blob.size > 0) {
+          this.ownedAudioObjectUrl = URL.createObjectURL(blob);
+          this.audioPlaybackUrl = this.ownedAudioObjectUrl;
+        }
+      },
+      error: () => {
+        this.audioPlaybackUrl = null;
+      },
+    });
   }
 
   loadResult(): void {
@@ -42,18 +97,21 @@ export class SessionResultComponent implements OnInit, OnDestroy {
     this.practiceApi.getPracticeSession(this.sessionId).subscribe({
       next: (s) => {
         this.session = s;
-        this.practiceApi.getQuestion(s.questionId).subscribe({
-          next: (q) => {
-            this.question = {
-              ...q,
-              content: cleanHtmlToPlainText(q.content),
-              sampleAnswer: cleanHtmlToPlainText(q.sampleAnswer),
-            };
-          },
-          error: () => {
-            // Keep null if question not found
-          },
-        });
+        this.loadAudioIfAvailable(s.audioUrl);
+        if (s.questionId) {
+          this.practiceApi.getQuestion(s.questionId).subscribe({
+            next: (q) => {
+              this.question = {
+                ...q,
+                content: cleanHtmlToPlainText(q.content),
+                sampleAnswer: cleanHtmlToPlainText(q.sampleAnswer),
+              };
+            },
+            error: () => {
+              // Keep null if question not found
+            },
+          });
+        }
 
         if (s.evaluation) {
           this.evaluation = s.evaluation;

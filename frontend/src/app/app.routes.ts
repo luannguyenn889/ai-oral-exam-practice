@@ -161,6 +161,20 @@ export const routes: Routes = [
             (m) => m.RubricEditorComponent,
           ),
       },
+      {
+        path: 'student-history',
+        loadComponent: () =>
+          import(
+            './features/instructor/student-practice-history/student-practice-history.component'
+          ).then((m) => m.StudentPracticeHistoryComponent),
+      },
+      {
+        path: 'analytics',
+        loadComponent: () =>
+          import(
+            './features/instructor/instructor-analytics/instructor-analytics.component'
+          ).then((m) => m.InstructorAnalyticsComponent),
+      },
     ],
   },
 

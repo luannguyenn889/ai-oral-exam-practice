@@ -19,6 +19,7 @@ from app.config import settings
 from app.schemas.question_import_schema import ExtractedQuestionItem
 from app.services.extractor.common import _clean_html_to_text, _items_to_questions
 from app.services.extractor.word_parser import _blocks_to_text
+from app.services.gemini_client import has_gemini_api_key, run_with_gemini_client
 
 EXTRACTION_JSON_SCHEMA = {
     "type": "OBJECT",
@@ -70,8 +71,7 @@ EXTRACTION_JSON_SCHEMA = {
 
 def _enrich_missing_with_gemini(items: list[dict]) -> None:
     """Gọi Gemini CHỈ để bổ sung tiêu đề tóm tắt, đáp án, rubric mà file gốc không có."""
-    api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not api_key or not items:
+    if not has_gemini_api_key() or not items:
         return
 
     schema = {
@@ -105,12 +105,6 @@ def _enrich_missing_with_gemini(items: list[dict]) -> None:
         "required": ["items"],
     }
 
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception as exc:  # pragma: no cover
-        print(f"[AI-SERVICE] Khong khoi tao duoc Gemini: {exc}", flush=True)
-        return
-
     by_code = {it["code"]: it for it in items}
     batch_size = 8
     for start_idx in range(0, len(items), batch_size):
@@ -139,14 +133,16 @@ def _enrich_missing_with_gemini(items: list[dict]) -> None:
             f"DANH SÁCH CÂU HỎI:\n{json.dumps(payload, ensure_ascii=False, indent=1)}"
         )
         try:
-            response = client.models.generate_content(
-                model=settings.default_llm_model or "gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=schema,
-                    temperature=0.2,
-                ),
+            response = run_with_gemini_client(
+                lambda client: client.models.generate_content(
+                    model=settings.default_llm_model or "gemini-2.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=schema,
+                        temperature=0.2,
+                    ),
+                )
             )
             parsed = json.loads((response.text or "").strip() or "{}")
         except Exception as exc:
@@ -187,9 +183,8 @@ def _enrich_missing_with_gemini(items: list[dict]) -> None:
 
 def _parse_word_with_gemini(blocks: list[dict]) -> Optional[List[ExtractedQuestionItem]]:
     """Phương án dự phòng: khi parser cấu trúc không nhận ra câu hỏi nào, nhờ Gemini bóc tách toàn bộ."""
-    api_key = (settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     full_text = _blocks_to_text(blocks)
-    if not api_key or not full_text.strip():
+    if not has_gemini_api_key() or not full_text.strip():
         return None
 
     system_prompt = """
@@ -207,15 +202,16 @@ BẠN LÀ CHUYÊN GIA BÓC TÁCH ĐỀ THI VẤN ĐÁP. QUY TẮC BẮT BUỘC:
 6. Mọi trường chuỗi chỉ xuất VĂN BẢN THUẦN (plain text), TUYỆT ĐỐI KHÔNG dùng thẻ HTML như `<ul>`, `<li>`, `<p>`, `<br>`, `<b>`.
 """
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=settings.default_llm_model or "gemini-2.5-flash",
-            contents=f"{system_prompt}\n\nTÀI LIỆU:\n===================\n{full_text[:40000]}",
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=EXTRACTION_JSON_SCHEMA,
-                temperature=0.1,
-            ),
+        response = run_with_gemini_client(
+            lambda client: client.models.generate_content(
+                model=settings.default_llm_model or "gemini-2.5-flash",
+                contents=f"{system_prompt}\n\nTÀI LIỆU:\n===================\n{full_text[:40000]}",
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=EXTRACTION_JSON_SCHEMA,
+                    temperature=0.1,
+                ),
+            )
         )
         parsed = json.loads((response.text or "").strip())
     except Exception as e:

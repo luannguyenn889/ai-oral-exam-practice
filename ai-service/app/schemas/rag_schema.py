@@ -38,6 +38,25 @@ class RagIndexResponse(BaseModel):
     chunking_strategy: str = "recursive"
 
 
+class RagIndexJobResponse(BaseModel):
+    job_id: str
+    course_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    phase: str = "queued"
+    percent: int = Field(default=0, ge=0, le=100)
+    message: str = ""
+    current_file: Optional[str] = None
+    processed_files: int = 0
+    total_files: int = 0
+    processed_chunks: int = 0
+    total_chunks: int = 0
+    embedding_provider: str = "local"
+    chunking_strategy: str = "recursive"
+    elapsed_seconds: int = 0
+    result: Optional[RagIndexResponse] = None
+    error: Optional[str] = None
+
+
 class RagSearchRequest(BaseModel):
     course_id: str = Field(default="default", description="Mã học phần cần tra cứu")
     query_text: str = Field(..., min_length=1, description="Câu hỏi hoặc câu trả lời sinh viên cần tra cứu")
@@ -92,4 +111,46 @@ class RagStatusResponse(BaseModel):
     search_modes_available: list[str]
     features: list[str]
     error: Optional[str] = None
+
+
+class SuggestedRubricCriterion(BaseModel):
+    name: str = Field(..., description="Tên tiêu chí Rubric đề xuất")
+    description: str = Field(default="", description="Hướng dẫn chấm chi tiết cho AI")
+    max_score: float = Field(..., gt=0, le=10.0, description="Điểm tối đa của tiêu chí")
+
+
+class RagSuggestAnswerRequest(BaseModel):
+    course_id: str = Field(default="default", description="Mã học phần dùng để truy xuất giáo trình RAG")
+    question: str = Field(..., min_length=3, description="Nội dung câu hỏi phát vấn")
+    topic: Optional[str] = Field(default=None, description="Chủ đề / chương kiến thức của câu hỏi")
+    reference_answer: Optional[str] = Field(
+        default=None,
+        description="Đáp án mẫu giảng viên đã soạn (nếu có) để AI bám sát khi đề xuất tiêu chí Rubric",
+    )
+    top_k: int = Field(default=4, ge=1, le=10, description="Số đoạn giáo trình RAG cần truy xuất")
+    search_mode: Literal["hybrid", "dense", "bm25"] = Field(
+        default="hybrid", description="Chế độ truy xuất RAG"
+    )
+    include_rubric: bool = Field(
+        default=False, description="Bật để AI gợi ý thêm danh sách tiêu chí Rubric thang 10.0đ"
+    )
+    selected_chunk_ids: Optional[list[str]] = Field(
+        default=None,
+        description="Danh sách chunk_id được giảng viên chọn giữ lại (Human-in-the-loop lọc nhiễu RAG)",
+    )
+    llm_model: Optional[str] = Field(
+        default=None, description="Ghi đè mô hình LLM (hỗ trợ 'mock' khi kiểm thử)"
+    )
+
+
+class RagSuggestAnswerResponse(BaseModel):
+    course_id: str
+    sample_answer: str
+    suggested_criteria: list[SuggestedRubricCriterion] = Field(default_factory=list)
+    rag_references: list[RagChunkResult] = Field(default_factory=list)
+    used_chunk_ids: list[str] = Field(default_factory=list)
+    llm_model: str
+    status: Literal["ai_draft"] = "ai_draft"
+    notice: str
+
 

@@ -32,6 +32,30 @@
 
   <!-- Bước 1: Chọn môn học & Upload file -->
   @if (!extractResult) {
+    @if (pendingDraft) {
+      <div class="draft-banner">
+        <div class="draft-banner__info">
+          <span class="material-symbols-outlined">history</span>
+          <span>
+            Phát hiện phiên nhập hàng loạt chưa lưu từ tệp
+            <strong>{{ pendingDraft.fileName }}</strong>
+            ({{ pendingDraft.questions.length }} câu hỏi
+            @if (pendingDraftTime) {
+              · lưu tạm lúc <strong>{{ pendingDraftTime }}</strong>
+            }).
+          </span>
+        </div>
+        <div class="draft-banner__actions">
+          <button type="button" class="btn btn--sm btn--primary" (click)="restoreDraft()">
+            Khôi phục bản nháp
+          </button>
+          <button type="button" class="btn btn--sm btn--ghost" (click)="discardDraft()">
+            Bỏ bản nháp
+          </button>
+        </div>
+      </div>
+    }
+
     <section class="card upload-card">
       <div class="course-selector-area">
         <label for="course-select" class="form-label">
@@ -117,6 +141,13 @@
               <strong>{{ totalCount }}</strong> câu hỏi
             </span>
           </div>
+
+          @if (lastAutoSavedAt) {
+            <span class="autosave-pill" title="Tự động lưu tạm trên trình duyệt khi bạn chỉnh sửa">
+              <span class="material-symbols-outlined">cloud_done</span>
+              Đã lưu tạm lúc {{ lastAutoSavedAt }}
+            </span>
+          }
         </div>
 
         <div class="summary-bar__badges">
@@ -146,6 +177,18 @@
             <span class="material-symbols-outlined">warning</span>
             Cần sửa ({{ errorCount + warningCount }})
           </button>
+
+          @if (aiPendingReviewCount > 0) {
+            <button
+              type="button"
+              class="btn btn--sm btn--hitl-approve"
+              (click)="approveAllAiQuestions()"
+              title="Đánh dấu đã rà soát toàn bộ đáp án / rubric do AI khởi tạo"
+            >
+              <span class="material-symbols-outlined">task_alt</span>
+              Duyệt {{ aiPendingReviewCount }} câu AI gợi ý
+            </button>
+          }
 
           @if (filteredQuestions.length > 0) {
             <button
@@ -193,6 +236,25 @@
 
                 @if (q.parentCode) {
                   <span class="badge badge--followup">Câu phụ của {{ q.parentCode }}</span>
+                }
+
+                @if (isAiGenerated(q)) {
+                  <button
+                    type="button"
+                    class="hitl-pill"
+                    [class.hitl-pill--approved]="q.instructorApproved"
+                    (click)="toggleQuestionApproval(q)"
+                    [title]="
+                      q.instructorApproved
+                        ? 'Giảng viên đã duyệt nội dung AI khởi tạo (bấm để bỏ đánh dấu)'
+                        : 'Nội dung có phần do AI khởi tạo — bấm để xác nhận giảng viên đã rà soát & duyệt'
+                    "
+                  >
+                    <span class="material-symbols-outlined">
+                      {{ q.instructorApproved ? 'verified' : 'auto_awesome' }}
+                    </span>
+                    {{ q.instructorApproved ? 'GV đã duyệt' : 'AI gợi ý · Chờ duyệt' }}
+                  </button>
                 }
               </div>
 

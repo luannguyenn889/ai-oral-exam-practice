@@ -56,6 +56,13 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   isSyncing = false;
   syncElapsedSeconds = 0;
   private syncTimerId: ReturnType<typeof setInterval> | null = null;
+  activeSyncJobId: string | null = null;
+  syncPercent = 0;
+  syncMessage = '';
+  syncCurrentFile = '';
+  syncProcessedChunks = 0;
+  syncTotalChunks = 0;
+  private syncPollTimerId: ReturnType<typeof setInterval> | null = null;
   stagedFiles: StagedUploadItem[] = [];
   uploadingProgressText = '';
   isUploadingLocal = false;
@@ -91,6 +98,9 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
+      this.stopPollingSyncJob();
+      this.stopSyncTimer();
+      this.isSyncing = false;
       this.courseId = params.get('courseId') || '';
       this.stagedFiles = [];
       this.uploadingProgressText = '';
@@ -104,6 +114,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.stopUploadTimer();
     this.stopSyncTimer();
+    this.stopPollingSyncJob();
   }
 
   onCourseSelect(courseCode: string): void {
@@ -165,6 +176,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     this.cleanedQuery = '';
     if (this.ragCourseCode) {
       this.loadRagStatus(true);
+      this.checkActiveSyncJob();
     }
   }
 
@@ -191,7 +203,11 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     }
     this.error = null;
     this.aiRagService.getRagStatus(this.ragCourseCode, this.embeddingProvider).subscribe({
-      next: (status) => { this.ragStatus = status; this.loading = false; },
+      next: (status) => {
+        this.ragStatus = status;
+        this.loading = false;
+        this.checkActiveSyncJob();
+      },
       error: () => { this.error = 'Chưa kết nối được với AI Service.'; this.loading = false; },
     });
   }
@@ -591,9 +607,9 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     return labels[this.chunkingStrategy];
   }
 
-  private startSyncTimer(): void {
+  private startSyncTimer(initialSeconds = 0): void {
     this.stopSyncTimer();
-    this.syncElapsedSeconds = 0;
+    this.syncElapsedSeconds = initialSeconds;
     this.syncTimerId = setInterval(() => {
       this.syncElapsedSeconds += 1;
     }, 1000);
@@ -606,30 +622,119 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     }
   }
 
+  private stopPollingSyncJob(): void {
+    if (this.syncPollTimerId !== null) {
+      clearInterval(this.syncPollTimerId);
+      this.syncPollTimerId = null;
+    }
+    this.activeSyncJobId = null;
+  }
+
+  private applySyncJobSnapshot(job: {
+    jobId: string;
+    percent: number;
+    message: string;
+    currentFile?: string | null;
+    processedChunks: number;
+    totalChunks: number;
+    elapsedSeconds: number;
+  }): void {
+    this.activeSyncJobId = job.jobId;
+    this.syncPercent = Math.max(0, Math.min(100, job.percent));
+    this.syncMessage = job.message || '';
+    this.syncCurrentFile = job.currentFile || '';
+    this.syncProcessedChunks = job.processedChunks || 0;
+    this.syncTotalChunks = job.totalChunks || 0;
+    if (job.elapsedSeconds > this.syncElapsedSeconds) {
+      this.syncElapsedSeconds = job.elapsedSeconds;
+    }
+  }
+
+  private startPollingSyncJob(jobId: string): void {
+    this.stopPollingSyncJob();
+    this.activeSyncJobId = jobId;
+    this.syncPollTimerId = setInterval(() => {
+      this.aiRagService.getIndexJobStatus(jobId).subscribe({
+        next: (job) => {
+          this.applySyncJobSnapshot(job);
+          if (job.status === 'completed') {
+            this.stopPollingSyncJob();
+            this.stopSyncTimer();
+            this.isSyncing = false;
+            const totalChunks = job.result?.totalChunks ?? job.totalChunks;
+            const totalFiles = job.result?.totalFiles ?? job.totalFiles;
+            this.toast.success(
+              `Đã đồng bộ chỉ mục RAG (${totalChunks} đoạn từ ${totalFiles} tài liệu, chế độ: ${job.result?.chunkingStrategy || job.chunkingStrategy}).`,
+            );
+            this.loadRagStatus(true);
+          } else if (job.status === 'failed') {
+            this.stopPollingSyncJob();
+            this.stopSyncTimer();
+            this.isSyncing = false;
+            this.toast.error(job.error || 'Lỗi khi đồng bộ chỉ mục RAG tại Server.');
+          }
+        },
+        error: (err) => {
+          if (err?.status === 404) {
+            this.stopPollingSyncJob();
+            this.stopSyncTimer();
+            this.isSyncing = false;
+          }
+        },
+      });
+    }, 1500);
+  }
+
+  checkActiveSyncJob(): void {
+    if (!this.ragCourseCode) return;
+    this.aiRagService.getActiveIndexJob(this.ragCourseCode, this.embeddingProvider).subscribe({
+      next: (job) => {
+        if (job && (job.status === 'queued' || job.status === 'running')) {
+          this.isSyncing = true;
+          this.startSyncTimer(job.elapsedSeconds);
+          this.applySyncJobSnapshot(job);
+          this.startPollingSyncJob(job.jobId);
+        }
+      },
+      error: () => {
+        // Bỏ qua nếu chưa hỏi được job đang chạy
+      },
+    });
+  }
+
   syncRagIndex(forceReindex = false): void {
     if (this.isSyncing) return;
     this.isSyncing = true;
-    this.startSyncTimer();
+    this.syncPercent = 1;
+    this.syncMessage = 'Đang khởi chạy tác vụ đồng bộ nền tại AI Service...';
+    this.syncCurrentFile = '';
+    this.syncProcessedChunks = 0;
+    this.syncTotalChunks = 0;
+    this.startSyncTimer(0);
+
     this.aiRagService
-      .indexCourseDocuments(
+      .startIndexCourseDocumentsJob(
         this.ragCourseCode,
         forceReindex,
         this.embeddingProvider,
         this.chunkingStrategy,
       )
       .subscribe({
-        next: (res) => {
-          this.stopSyncTimer();
-          this.isSyncing = false;
-          this.toast.success(
-            `Đã đồng bộ chỉ mục RAG (${res.totalChunks} đoạn từ ${res.totalFiles} tài liệu, chế độ: ${res.chunkingStrategy || this.chunkingStrategy}).`,
-          );
-          this.loadRagStatus();
+        next: (job) => {
+          this.applySyncJobSnapshot(job);
+          if (job.status === 'completed') {
+            this.stopSyncTimer();
+            this.isSyncing = false;
+            this.loadRagStatus(true);
+            return;
+          }
+          this.startPollingSyncJob(job.jobId);
         },
         error: () => {
+          this.stopPollingSyncJob();
           this.stopSyncTimer();
           this.isSyncing = false;
-          this.toast.error('Lỗi khi đồng bộ chỉ mục RAG tại Server.');
+          this.toast.error('Không thể khởi chạy đồng bộ chỉ mục RAG tại Server.');
         },
       });
   }

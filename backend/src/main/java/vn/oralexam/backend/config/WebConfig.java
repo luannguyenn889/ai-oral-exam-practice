@@ -42,6 +42,10 @@ public class WebConfig {
                         .requestMatchers(HttpMethod.GET, "/api/courses/**", "/api/questions/**").permitAll()
                         .requestMatchers("/api/courses/**", "/api/questions/**", "/api/documents/**", "/api/drive/**")
                         .hasAnyRole("INSTRUCTOR", "ADMIN")
+                        .requestMatchers("/api/practice-records/instructor/**", "/api/practice-records/*/review")
+                        .hasAnyRole("INSTRUCTOR", "ADMIN")
+                        .requestMatchers("/api/practice-records/**")
+                        .authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(tokenService), UsernamePasswordAuthenticationFilter.class)
                 .build();
