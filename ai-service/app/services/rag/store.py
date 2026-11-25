@@ -19,11 +19,18 @@ from typing import Any, Callable, Optional
 import chromadb
 
 from app.config import settings
+from app.services.rag.course_config import (
+    get_course_rag_config,
+    resolve_course_chunking_strategy,
+    resolve_course_embedding_provider,
+    set_course_rag_config,
+)
 from app.services.rag.chunking import (
     CHUNKING_VERSION,
     DEFAULT_CHUNKING_STRATEGY,
     chunk_text,
     get_chunking_strategy_label,
+    is_low_value_rag_chunk,
     normalize_chunking_strategy,
 )
 from app.services.rag.embeddings import (
@@ -126,6 +133,7 @@ def get_bm25_index(
                     "source": meta.get("source", "Không rõ"),
                     "course_id": meta.get("course_id", norm_course),
                     "index": meta.get("index", 0),
+                    "section_title": meta.get("section_title", ""),
                 }
             )
 
@@ -173,10 +181,21 @@ def index_documents(
                 pass
 
     norm_course = normalize_course_id(course_id)
+    if (isinstance(embedding_provider, str) and embedding_provider.strip()) or (
+        isinstance(chunking_strategy, str) and chunking_strategy.strip()
+    ):
+        set_course_rag_config(
+            norm_course,
+            embedding_provider=embedding_provider,
+            chunking_strategy=chunking_strategy,
+        )
+    effective_provider = resolve_course_embedding_provider(norm_course, embedding_provider)
+    effective_strategy = resolve_course_chunking_strategy(norm_course, chunking_strategy)
+
     course_dir = str(settings.course_documents_dir(norm_course))
-    collection = get_chroma_collection(embedding_provider)
-    active_embedding_name = get_active_embedding_name(embedding_provider)
-    active_strategy = normalize_chunking_strategy(chunking_strategy)
+    collection = get_chroma_collection(effective_provider)
+    active_embedding_name = get_active_embedding_name(effective_provider)
+    active_strategy = effective_strategy
 
     if force_reindex:
         invalidate_bm25_cache(norm_course)
@@ -275,7 +294,7 @@ def index_documents(
             source_name=source,
             course_id=norm_course,
             strategy=active_strategy,
-            embedding_provider=embedding_provider,
+            embedding_provider=effective_provider,
         )
         if file_chunks:
             old_ids = previous["ids"] if previous else []
@@ -311,11 +330,11 @@ def index_documents(
                 embeddings = embed_texts(
                     texts,
                     task="document",
-                    provider=embedding_provider,
+                    provider=effective_provider,
                     progress_callback=_on_embed_progress,
                 )
             else:
-                embeddings = embed_texts(texts, task="document", provider=embedding_provider)
+                embeddings = embed_texts(texts, task="document", provider=effective_provider)
 
             _report(
                 phase="storing",
@@ -418,7 +437,8 @@ def query_relevant_chunks(
         return []
 
     norm_course = normalize_course_id(course_id)
-    collection = get_chroma_collection(embedding_provider)
+    effective_provider = resolve_course_embedding_provider(norm_course, embedding_provider)
+    collection = get_chroma_collection(effective_provider)
 
     try:
         existing_course = collection.get(where={"course_id": norm_course}, include=[])
@@ -430,7 +450,7 @@ def query_relevant_chunks(
         index_documents(
             course_id=norm_course,
             force_reindex=False,
-            embedding_provider=embedding_provider,
+            embedding_provider=effective_provider,
         )
         try:
             existing_course = collection.get(where={"course_id": norm_course}, include=[])
@@ -442,11 +462,11 @@ def query_relevant_chunks(
         return []
 
     cleaned_query = clean_oral_query(query_text)
-    candidate_pool_size = min(max(top_k * 3, 8), course_count)
+    candidate_pool_size = min(max(top_k * 6, 20), course_count)
     candidates: dict[str, dict[str, Any]] = {}
 
     if search_mode in ("hybrid", "dense"):
-        query_vector = embed_texts([cleaned_query], task="query", provider=embedding_provider)
+        query_vector = embed_texts([cleaned_query], task="query", provider=effective_provider)
         results = collection.query(
             query_embeddings=query_vector,
             n_results=candidate_pool_size,
@@ -471,6 +491,7 @@ def query_relevant_chunks(
                     "source": meta.get("source", "Không rõ"),
                     "course_id": meta.get("course_id", norm_course),
                     "index": meta.get("index", 0),
+                    "section_title": meta.get("section_title", ""),
                     "dense_sim": sim,
                     "dense_distance": round(float(dist), 4),
                     "dense_rank": rank,
@@ -480,7 +501,7 @@ def query_relevant_chunks(
                 }
 
     if search_mode in ("hybrid", "bm25"):
-        bm25, bm25_docs = get_bm25_index(norm_course, provider=embedding_provider)
+        bm25, bm25_docs = get_bm25_index(norm_course, provider=effective_provider)
         if bm25 and bm25_docs:
             tokenized_q = tokenize_text(cleaned_query)
             if tokenized_q:
@@ -502,6 +523,7 @@ def query_relevant_chunks(
                             "source": b_doc["source"],
                             "course_id": b_doc.get("course_id", norm_course),
                             "index": b_doc["index"],
+                            "section_title": b_doc.get("section_title", ""),
                             "dense_sim": None,
                             "dense_rank": 999,
                             "bm25_score": round(score, 2),
@@ -515,7 +537,13 @@ def query_relevant_chunks(
     if not candidates:
         return []
 
-    candidate_list = list(candidates.values())
+    raw_candidates = list(candidates.values())
+    filtered_candidates = [
+        c
+        for c in raw_candidates
+        if not is_low_value_rag_chunk(str(c.get("text", "")), str(c.get("section_title", "")))
+    ]
+    candidate_list = filtered_candidates if filtered_candidates else raw_candidates
     k_constant = 60.0
     for c in candidate_list:
         retrieval_sources = []
@@ -588,15 +616,17 @@ def get_rag_status(
 ) -> dict[str, Any]:
     """Lấy thông tin trạng thái kho tri thức RAG của một học phần."""
     norm_course = normalize_course_id(course_id)
+    saved_cfg = get_course_rag_config(norm_course)
+    effective_provider = resolve_course_embedding_provider(norm_course, embedding_provider)
     course_dir = str(settings.course_documents_dir(norm_course))
     try:
-        collection = get_chroma_collection(embedding_provider)
+        collection = get_chroma_collection(effective_provider)
         existing = collection.get(where={"course_id": norm_course}, include=["metadatas"])
         ids = existing.get("ids", [])
         metadatas = existing.get("metadatas", []) or []
         count = len(ids)
 
-        indexed_strategy = DEFAULT_CHUNKING_STRATEGY
+        indexed_strategy = saved_cfg.get("chunking_strategy") or DEFAULT_CHUNKING_STRATEGY
         if count > 0:
             found_strategies = {
                 (m or {}).get("chunking_strategy") or "legacy" for m in metadatas
@@ -609,7 +639,7 @@ def get_rag_status(
         all_paths = list_course_files(norm_course)
         files = [os.path.relpath(p, course_dir).replace("\\", "/") for p in all_paths]
 
-        bm25, _ = get_bm25_index(norm_course, provider=embedding_provider) if count else (None, [])
+        bm25, _ = get_bm25_index(norm_course, provider=effective_provider) if count else (None, [])
         has_bm25 = bm25 is not None
 
         return {
@@ -618,7 +648,8 @@ def get_rag_status(
             "total_chunks": count,
             "total_files": len(files),
             "files": files,
-            "embedding_model": get_active_embedding_name(embedding_provider),
+            "embedding_provider": effective_provider,
+            "embedding_model": get_active_embedding_name(effective_provider),
             "reranker_model": settings.reranker_model_name,
             "chunking_strategy": indexed_strategy,
             "hybrid_bm25_active": has_bm25,
@@ -640,9 +671,10 @@ def get_rag_status(
             "total_chunks": 0,
             "total_files": 0,
             "files": [],
-            "embedding_model": get_active_embedding_name(embedding_provider),
+            "embedding_provider": effective_provider,
+            "embedding_model": get_active_embedding_name(effective_provider),
             "reranker_model": settings.reranker_model_name,
-            "chunking_strategy": DEFAULT_CHUNKING_STRATEGY,
+            "chunking_strategy": saved_cfg.get("chunking_strategy") or DEFAULT_CHUNKING_STRATEGY,
             "hybrid_bm25_active": False,
             "reranker_enabled_by_default": False,
             "search_modes_available": [],

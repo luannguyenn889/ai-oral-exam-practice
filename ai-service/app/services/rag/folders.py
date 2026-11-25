@@ -14,6 +14,7 @@ import shutil
 from typing import Any, Optional
 
 from app.config import settings
+from app.services.rag.course_config import delete_course_rag_config, rename_course_rag_config
 from app.services.rag.embeddings import EMBEDDING_PROVIDERS, normalize_course_id
 from app.services.rag.store import (
     get_chroma_collection,
@@ -152,6 +153,8 @@ def rename_course_folder(
     if purge_keys:
         _purge_course_vectors(purge_keys)
 
+    rename_course_rag_config(norm_old, norm_new)
+
     if migrated_files > 0 or (norm_old != norm_new and list_course_files(norm_new)):
         index_documents(course_id=norm_new, force_reindex=False)
 
@@ -190,6 +193,7 @@ def delete_course_folder(course_code: str, legacy_id: Optional[str] = None) -> d
             deleted_dirs += 1
 
     removed_chunks = _purge_course_vectors(purge_keys)
+    delete_course_rag_config(norm_code)
     return {
         "course_code": norm_code,
         "deleted_dirs": deleted_dirs,

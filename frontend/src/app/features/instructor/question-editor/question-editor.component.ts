@@ -45,6 +45,7 @@ export class QuestionEditorComponent implements OnInit {
   ragReferences: RagChunkResult[] = [];
   selectedRagChunkIds = new Set<string>();
   ragSuggestModel = '';
+  ragSuggestEmbeddingModel = '';
   ragSuggestNotice = '';
   answerReviewStatus: 'manual' | 'ai_draft' | 'approved' = 'manual';
   approvedAt = '';
@@ -155,6 +156,7 @@ export class QuestionEditorComponent implements OnInit {
               : this.ragReferences.map((r) => r.chunkId),
           );
           this.ragSuggestModel = res.llmModel;
+          this.ragSuggestEmbeddingModel = res.embeddingModel || '';
           this.ragSuggestNotice = res.notice;
           this.answerReviewStatus = 'ai_draft';
           this.approvedAt = '';

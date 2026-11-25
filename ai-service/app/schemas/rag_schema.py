@@ -103,6 +103,7 @@ class RagStatusResponse(BaseModel):
     total_chunks: int
     total_files: int
     files: list[str]
+    embedding_provider: str = "local"
     embedding_model: str
     reranker_model: str
     chunking_strategy: str = "recursive"
@@ -111,6 +112,22 @@ class RagStatusResponse(BaseModel):
     search_modes_available: list[str]
     features: list[str]
     error: Optional[str] = None
+
+
+class CourseRagConfigUpdateRequest(BaseModel):
+    embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
+        default=None, description="Nhà cung cấp embedding mặc định áp dụng cho học phần"
+    )
+    chunking_strategy: Optional[ChunkingStrategy] = Field(
+        default=None, description="Chiến lược chia đoạn mặc định áp dụng cho học phần"
+    )
+
+
+class CourseRagConfigResponse(BaseModel):
+    course_id: str
+    embedding_provider: str
+    chunking_strategy: str
+    embedding_model: str
 
 
 class SuggestedRubricCriterion(BaseModel):
@@ -138,6 +155,10 @@ class RagSuggestAnswerRequest(BaseModel):
         default=None,
         description="Danh sách chunk_id được giảng viên chọn giữ lại (Human-in-the-loop lọc nhiễu RAG)",
     )
+    embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
+        default=None,
+        description="Ghi đè embedding provider; mặc định tự động lấy theo cấu hình đã lưu của học phần",
+    )
     llm_model: Optional[str] = Field(
         default=None, description="Ghi đè mô hình LLM (hỗ trợ 'mock' khi kiểm thử)"
     )
@@ -149,6 +170,8 @@ class RagSuggestAnswerResponse(BaseModel):
     suggested_criteria: list[SuggestedRubricCriterion] = Field(default_factory=list)
     rag_references: list[RagChunkResult] = Field(default_factory=list)
     used_chunk_ids: list[str] = Field(default_factory=list)
+    embedding_provider: str = "local"
+    embedding_model: str = ""
     llm_model: str
     status: Literal["ai_draft"] = "ai_draft"
     notice: str

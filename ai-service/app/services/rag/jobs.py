@@ -15,6 +15,11 @@ import uuid
 from typing import Any, Optional
 
 from app.services.rag.chunking import normalize_chunking_strategy
+from app.services.rag.course_config import (
+    resolve_course_chunking_strategy,
+    resolve_course_embedding_provider,
+    set_course_rag_config,
+)
 from app.services.rag.embeddings import normalize_course_id, normalize_embedding_provider
 from app.services.rag.store import index_documents
 
@@ -95,8 +100,16 @@ def start_index_job(
 ) -> dict[str, Any]:
     """Khởi chạy tác vụ lập chỉ mục ở luồng nền và trả về job_id ngay lập tức."""
     norm_course = normalize_course_id(course_id)
-    norm_provider = normalize_embedding_provider(embedding_provider)
-    norm_strategy = normalize_chunking_strategy(chunking_strategy)
+    if (isinstance(embedding_provider, str) and embedding_provider.strip()) or (
+        isinstance(chunking_strategy, str) and chunking_strategy.strip()
+    ):
+        set_course_rag_config(
+            norm_course,
+            embedding_provider=embedding_provider,
+            chunking_strategy=chunking_strategy,
+        )
+    norm_provider = resolve_course_embedding_provider(norm_course, embedding_provider)
+    norm_strategy = resolve_course_chunking_strategy(norm_course, chunking_strategy)
 
     with _jobs_lock:
         # Nếu cùng học phần & provider đang chạy nền, tái sử dụng job đó để tránh chạy chồng

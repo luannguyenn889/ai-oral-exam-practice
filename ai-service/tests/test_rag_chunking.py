@@ -229,6 +229,89 @@ def test_docx_interleaved_table_and_header_repeat() -> None:
         Path(tmp_path).unlink(missing_ok=True)
 
 
+def test_low_value_rag_chunk_filtering_at_index_and_query() -> None:
+    index_noise = (
+        "Barnes, J. P., 336, 339 Basili, V. R., 674, 679, 712, 730 Bass, B. M., 606, 617 "
+        "Bass, L., 149, 150, 154, 173, 174 Bate, R., 722, 731 Baumer, D., 432, 450 "
+        "Beck, K., 57, 59, 64, 78, 80, 91, 117, 183, 204, 221, 232, 259, 611, 617, 631, 649"
+    )
+    refs_noise = (
+        "Poole, G. and Huisman, J. W. (2001). 'Using Extreme Programming in a Maintenance Environment'. "
+        "IEEE Software, 18 (6), 42–50. Rising, L. and Janoff, N. S. (2000). 'The Scrum Software Development "
+        "Process for Small Teams'. IEEE Software, 17 (4), 26–32. Schwaber, K. (2004). Agile Project "
+        "Management with Scrum. Schwaber, K. and Beedle, M. (2001). Agile Software Development with Scrum."
+    )
+    toc_noise = (
+        "Chapter 1. Introduction .......................... 12\n"
+        "Chapter 2. Software Processes .................... 34\n"
+        "Chapter 3. Agile Software Development ............ 58\n"
+    )
+    valid_prose = (
+        "[Chapter 3 | Agile software development > 3.1 Agile methods]\n"
+        "Agile software development methods focus on iterative delivery, rapid feedback, and close "
+        "collaboration with customers rather than heavy upfront specification and rigid documentation."
+    )
+
+    assert rag_service.is_low_value_rag_chunk(index_noise) is True
+    assert rag_service.is_low_value_rag_chunk(refs_noise) is True
+    assert rag_service.is_low_value_rag_chunk(toc_noise) is True
+    assert rag_service.is_low_value_rag_chunk(valid_prose) is False
+
+    mixed_doc = (
+        "# Chapter 3. Agile software development\n"
+        "Agile software development methods focus on iterative delivery and continuous customer collaboration.\n\n"
+        "# Index\n"
+        f"{index_noise}\n\n"
+        "# References\n"
+        f"{refs_noise}\n"
+    )
+    chunks = rag_service.chunk_text_recursive(
+        mixed_doc,
+        source_name="sommerville.pdf",
+        course_id="SE_FILTER",
+    )
+    assert len(chunks) >= 1
+    assert all("Barnes, J. P., 336" not in c["text"] for c in chunks)
+    assert all("Poole, G. and Huisman" not in c["text"] for c in chunks)
+    assert any("iterative delivery" in c["text"] for c in chunks)
+
+    # Kiểm thử lọc chunk rác ngay lúc truy vấn (kể cả trên kho vector đã index từ trước)
+    from unittest.mock import patch
+    from app.services.rag import store as rag_store
+
+    class _MockColl:
+        def get(self, where=None, include=None):
+            return {"ids": ["c1", "c2", "c3"]}
+
+        def query(self, query_embeddings, n_results, where=None, include=None):
+            return {
+                "ids": [["c1", "c2", "c3"]],
+                "documents": [[index_noise, refs_noise, valid_prose]],
+                "metadatas": [[
+                    {"source": "sommerville.pdf", "course_id": "SE_FILTER", "index": 1, "section_title": ""},
+                    {"source": "sommerville.pdf", "course_id": "SE_FILTER", "index": 2, "section_title": ""},
+                    {"source": "sommerville.pdf", "course_id": "SE_FILTER", "index": 3, "section_title": "Chapter 3 > 3.1 Agile methods"},
+                ]],
+                "distances": [[0.15, 0.16, 0.22]],
+            }
+
+    with (
+        patch.object(rag_store, "get_chroma_collection", return_value=_MockColl()),
+        patch.object(rag_store, "embed_texts", return_value=[[0.1] * 8]),
+        patch.object(rag_store, "get_bm25_index", return_value=(None, [])),
+    ):
+        results = rag_store.query_relevant_chunks(
+            query_text="Trình bày về Agile software development?",
+            course_id="SE_FILTER",
+            top_k=3,
+            search_mode="hybrid",
+            use_rerank=False,
+        )
+        assert len(results) == 1
+        assert results[0]["id"] == "c3"
+        assert "iterative delivery" in results[0]["text"]
+
+
 if __name__ == "__main__":
     test_legacy_chunking_preserved()
     test_recursive_chunking_heading_aware()
@@ -237,4 +320,5 @@ if __name__ == "__main__":
     test_hierarchical_breadcrumb_stack()
     test_generic_pdf_running_header_footer_and_page_stitch()
     test_docx_interleaved_table_and_header_repeat()
-    print(">>> ALL 7 RAG CHUNKING TESTS PASSED! <<<")
+    test_low_value_rag_chunk_filtering_at_index_and_query()
+    print(">>> ALL 8 RAG CHUNKING TESTS PASSED! <<<")
