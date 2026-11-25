@@ -26,6 +26,8 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.schemas.rag_schema import (
+    CourseRagConfigResponse,
+    CourseRagConfigUpdateRequest,
     RagChunkResult,
     RagIndexJobResponse,
     RagIndexRequest,
@@ -207,6 +209,7 @@ def suggest_reference_answer_endpoint(
             search_mode=request.search_mode,
             include_rubric=request.include_rubric,
             selected_chunk_ids=request.selected_chunk_ids,
+            embedding_provider=request.embedding_provider,
             llm_model=request.llm_model,
         )
         rag_refs = [
@@ -239,6 +242,8 @@ def suggest_reference_answer_endpoint(
             suggested_criteria=criteria,
             rag_references=rag_refs,
             used_chunk_ids=result.get("used_chunk_ids", []),
+            embedding_provider=result.get("embedding_provider", "local"),
+            embedding_model=result.get("embedding_model", ""),
             llm_model=result["llm_model"],
             status="ai_draft",
             notice=result["notice"],
@@ -249,6 +254,35 @@ def suggest_reference_answer_endpoint(
         raise HTTPException(
             status_code=500, detail=f"Lỗi khi AI khởi tạo bản nháp đáp án từ RAG: {exc}"
         ) from exc
+
+
+@router.get("/courses/{course_id}/config", response_model=CourseRagConfigResponse)
+def get_course_rag_config_endpoint(course_id: str) -> CourseRagConfigResponse:
+    cfg = rag_service.get_course_rag_config(course_id)
+    return CourseRagConfigResponse(
+        course_id=cfg["course_id"],
+        embedding_provider=cfg["embedding_provider"],
+        chunking_strategy=cfg["chunking_strategy"],
+        embedding_model=rag_service.get_active_embedding_name(cfg["embedding_provider"]),
+    )
+
+
+@router.put("/courses/{course_id}/config", response_model=CourseRagConfigResponse)
+def update_course_rag_config_endpoint(
+    course_id: str,
+    request: CourseRagConfigUpdateRequest,
+) -> CourseRagConfigResponse:
+    cfg = rag_service.set_course_rag_config(
+        course_id=course_id,
+        embedding_provider=request.embedding_provider,
+        chunking_strategy=request.chunking_strategy,
+    )
+    return CourseRagConfigResponse(
+        course_id=cfg["course_id"],
+        embedding_provider=cfg["embedding_provider"],
+        chunking_strategy=cfg["chunking_strategy"],
+        embedding_model=rag_service.get_active_embedding_name(cfg["embedding_provider"]),
+    )
 
 
 @router.get("/status", response_model=RagStatusResponse)

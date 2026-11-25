@@ -211,6 +211,9 @@
                   <h3 class="rag-review-panel__title">
                     <span class="material-symbols-outlined">menu_book</span>
                     Tham chiếu giáo trình RAG ({{ selectedRagCount }}/{{ ragReferences.length }} đoạn được chọn)
+                    @if (ragSuggestEmbeddingModel) {
+                      <span class="rag-score-pill">Embedding: {{ ragSuggestEmbeddingModel }}</span>
+                    }
                   </h3>
                   <p class="rag-review-panel__hint">
                     Bỏ chọn các đoạn trích bị nhiễu hoặc lệch chủ đề, sau đó bấm tạo lại để AI bám đúng phần kiến thức giảng viên duyệt.

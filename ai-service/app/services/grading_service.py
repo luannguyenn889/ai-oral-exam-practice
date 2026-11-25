@@ -17,7 +17,7 @@ import json
 import os
 import re
 import time
-from typing import Any
+from typing import Any, Optional
 
 from google import genai
 from google.genai import types
@@ -150,6 +150,7 @@ def _evaluate_mock(
     rubric_items: list[dict[str, Any]],
     rag_refs: list[RagReference],
     start_ts: float,
+    embedding_provider: Optional[str] = None,
 ) -> EvaluationResponse:
     criteria_results: list[CriterionEvaluation] = []
     for item in rubric_items:
@@ -191,7 +192,7 @@ def _evaluate_mock(
         rag_references=rag_refs,
         metadata=EvaluationMetadata(
             llm_model="mock",
-            embedding_model=rag_service.get_active_embedding_name(),
+            embedding_model=rag_service.get_active_embedding_name(embedding_provider),
             processing_time_ms=elapsed_ms,
         ),
     )
@@ -205,6 +206,9 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
     start_ts = time.perf_counter()
     rubric_items = _build_default_rubric(request)
     max_total_score = round(sum(item["max_score"] for item in rubric_items), 2)
+    effective_provider = rag_service.resolve_course_embedding_provider(
+        request.course_id, request.rag_config.embedding_provider
+    )
 
     # 1. Truy xuất ngữ cảnh giáo trình bằng Hybrid RAG (nếu bật)
     rag_chunks: list[dict[str, Any]] = []
@@ -220,6 +224,7 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
             score_threshold=request.rag_config.score_threshold,
             search_mode=request.rag_config.search_mode,
             use_rerank=request.rag_config.use_rerank,
+            embedding_provider=effective_provider,
         )
         rag_context_str = rag_service.format_rag_context(rag_chunks)
         for chunk in rag_chunks:
@@ -239,7 +244,7 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
 
     llm_model = (request.llm_model or settings.default_llm_model or "gemini-2.5-flash").strip()
     if llm_model.lower() == "mock":
-        return _evaluate_mock(request, rubric_items, rag_refs, start_ts)
+        return _evaluate_mock(request, rubric_items, rag_refs, start_ts, effective_provider)
 
     # 2. Xây dựng Prompt chấm điểm phân định rõ trọng số: Đáp án mẫu & Rubric (chính) > RAG Context (bổ trợ)
     rubric_json_str = json.dumps(rubric_items, ensure_ascii=False, indent=2)
@@ -371,7 +376,7 @@ BẮT BUỘC TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON (không kèm bất k�
         rag_references=rag_refs,
         metadata=EvaluationMetadata(
             llm_model=llm_model,
-            embedding_model=rag_service.get_active_embedding_name(),
+            embedding_model=rag_service.get_active_embedding_name(effective_provider),
             processing_time_ms=elapsed_ms,
         ),
     )

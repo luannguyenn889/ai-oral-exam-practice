@@ -26,6 +26,10 @@ class RagConfig(BaseModel):
     top_k: int = Field(default=3, ge=1, le=10)
     score_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     use_rerank: bool = Field(default=False)
+    embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
+        default=None,
+        description="Ghi đè embedding provider; nếu để trống sẽ tự dùng cấu hình RAG đã lưu của học phần",
+    )
 
 
 class EvaluationRequest(BaseModel):

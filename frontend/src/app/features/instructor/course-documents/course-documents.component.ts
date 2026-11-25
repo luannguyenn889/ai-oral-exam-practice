@@ -150,11 +150,11 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
           this.aiRagService
             .syncCourseFolder(this.ragCourseCode, undefined, this.course.id)
             .subscribe({
-              next: () => this.loadRagStatus(),
-              error: () => this.loadRagStatus(),
+              next: () => this.loadRagStatus(false, true),
+              error: () => this.loadRagStatus(false, true),
             });
         } else {
-          this.loadRagStatus();
+          this.loadRagStatus(false, true);
         }
       },
       error: () => {
@@ -164,7 +164,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
           this.ragStatus = null;
           this.loading = false;
         } else {
-          this.loadRagStatus();
+          this.loadRagStatus(false, true);
         }
       },
     });
@@ -175,8 +175,21 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     this.searchResults = [];
     this.cleanedQuery = '';
     if (this.ragCourseCode) {
-      this.loadRagStatus(true);
-      this.checkActiveSyncJob();
+      this.aiRagService
+        .updateCourseRagConfig(this.ragCourseCode, { embeddingProvider: this.embeddingProvider })
+        .subscribe({
+          next: (cfg) => {
+            this.toast.info(
+              `Đã áp dụng kiểu Embedding "${cfg.embeddingModel}" cho học phần ${this.ragCourseCode} (tự động đồng bộ sang Soạn câu hỏi, Rubric & Chấm bài).`,
+            );
+            this.loadRagStatus(true, false);
+            this.checkActiveSyncJob();
+          },
+          error: () => {
+            this.loadRagStatus(true, false);
+            this.checkActiveSyncJob();
+          },
+        });
     }
   }
 
@@ -187,12 +200,17 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
       semantic: 'Semantic theo ngữ nghĩa (Embedding)',
       legacy: 'Boundary 600 ký tự (Cách cũ)',
     };
+    if (this.ragCourseCode) {
+      this.aiRagService
+        .updateCourseRagConfig(this.ragCourseCode, { chunkingStrategy: this.chunkingStrategy })
+        .subscribe({ error: () => {} });
+    }
     this.toast.info(
       `Đã chọn chiến lược cắt đoạn: ${labels[this.chunkingStrategy]}. Bấm "Đồng bộ chỉ mục Server" nếu muốn lập chỉ mục lại các file hiện có.`,
     );
   }
 
-  loadRagStatus(silent = false): void {
+  loadRagStatus(silent = false, syncSavedSelection = false): void {
     if (!this.ragCourseCode) {
       this.ragStatus = null;
       this.loading = false;
@@ -202,9 +220,22 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
       this.loading = true;
     }
     this.error = null;
-    this.aiRagService.getRagStatus(this.ragCourseCode, this.embeddingProvider).subscribe({
+    const providerArg = syncSavedSelection ? undefined : this.embeddingProvider;
+    this.aiRagService.getRagStatus(this.ragCourseCode, providerArg).subscribe({
       next: (status) => {
         this.ragStatus = status;
+        if (syncSavedSelection) {
+          if (status.embeddingProvider) {
+            this.embeddingProvider = status.embeddingProvider;
+          }
+          if (
+            status.chunkingStrategy === 'recursive' ||
+            status.chunkingStrategy === 'semantic' ||
+            status.chunkingStrategy === 'legacy'
+          ) {
+            this.chunkingStrategy = status.chunkingStrategy;
+          }
+        }
         this.loading = false;
         this.checkActiveSyncJob();
       },

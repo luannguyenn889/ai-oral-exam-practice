@@ -172,6 +172,7 @@ export interface RagStatus {
   totalChunks: number;
   totalFiles: number;
   files: string[];
+  embeddingProvider?: 'local' | 'e5-small' | 'gemini';
   embeddingModel: string;
   rerankerModel: string;
   chunkingStrategy?: string;
@@ -217,6 +218,8 @@ export interface RagSuggestAnswerResponse {
   suggestedCriteria: SuggestedRubricCriterion[];
   ragReferences: RagChunkResult[];
   usedChunkIds: string[];
+  embeddingProvider?: string;
+  embeddingModel?: string;
   llmModel: string;
   status: 'ai_draft';
   notice: string;

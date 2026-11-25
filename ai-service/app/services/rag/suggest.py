@@ -23,7 +23,8 @@ from app.services.extractor.common import (
     _generate_tailored_sample_answer,
 )
 from app.services.gemini_client import has_gemini_api_key, run_with_gemini_client
-from app.services.rag.embeddings import normalize_course_id
+from app.services.rag.course_config import resolve_course_embedding_provider
+from app.services.rag.embeddings import get_active_embedding_name, normalize_course_id
 from app.services.rag.store import format_rag_context, query_relevant_chunks
 
 HITL_NOTICE = (
@@ -101,21 +102,25 @@ def suggest_reference_answer(
     search_mode: str = "hybrid",
     include_rubric: bool = False,
     selected_chunk_ids: Optional[list[str]] = None,
+    embedding_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Truy xuất RAG và nhờ AI khởi tạo bản nháp Đáp án mẫu (+ tùy chọn Rubric) cho giảng viên duyệt."""
     normalized_course = normalize_course_id(course_id)
+    effective_provider = resolve_course_embedding_provider(normalized_course, embedding_provider)
+    active_embedding_model = get_active_embedding_name(effective_provider)
     query_parts = [p.strip() for p in [topic or "", question] if p and p.strip()]
     search_query = " — ".join(query_parts) if query_parts else question
 
-    # 1. Truy xuất các đoạn giáo trình liên quan bằng Hybrid RAG
+    # 1. Truy xuất các đoạn giáo trình liên quan bằng Hybrid RAG theo đúng embedding của học phần
     try:
         retrieved_chunks = query_relevant_chunks(
             query_text=search_query,
             course_id=normalized_course,
             top_k=top_k,
             search_mode=search_mode,
-            use_rerank=False,
+            use_rerank=True,
+            embedding_provider=effective_provider,
         )
     except Exception:
         retrieved_chunks = []
@@ -145,6 +150,8 @@ def suggest_reference_answer(
             "suggested_criteria": suggested_criteria,
             "rag_references": retrieved_chunks,
             "used_chunk_ids": used_chunk_ids,
+            "embedding_provider": effective_provider,
+            "embedding_model": active_embedding_model,
             "llm_model": "mock-fallback" if target_model.lower() != "mock" else "mock",
             "status": "ai_draft",
             "notice": HITL_NOTICE,
@@ -249,6 +256,8 @@ def suggest_reference_answer(
             "suggested_criteria": suggested_criteria,
             "rag_references": retrieved_chunks,
             "used_chunk_ids": used_chunk_ids,
+            "embedding_provider": effective_provider,
+            "embedding_model": active_embedding_model,
             "llm_model": target_model,
             "status": "ai_draft",
             "notice": HITL_NOTICE,
@@ -266,6 +275,8 @@ def suggest_reference_answer(
             "suggested_criteria": suggested_criteria,
             "rag_references": retrieved_chunks,
             "used_chunk_ids": used_chunk_ids,
+            "embedding_provider": effective_provider,
+            "embedding_model": active_embedding_model,
             "llm_model": f"{target_model} (fallback)",
             "status": "ai_draft",
             "notice": HITL_NOTICE,
