@@ -6,7 +6,9 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "cy:open": "cypress open",
+    "cy:run": "cypress run"
   },
   "prettier": {
     "printWidth": 100,
@@ -46,6 +48,7 @@
     "@angular/compiler-cli": "^21.1.0",
     "@eslint/js": "^10.0.1",
     "angular-eslint": "^22.6.0",
+    "cypress": "^16.4.0",
     "eslint": "^10.12.0",
     "jsdom": "^27.1.0",
     "prettier": "^3.9.10",

@@ -23,6 +23,7 @@ _HTML_BLOCK_BREAK_RE = re.compile(
     re.IGNORECASE,
 )
 _HTML_TD_CLOSE_RE = re.compile(r"</t[dh]\s*>", re.IGNORECASE)
+_INLINE_BULLET_RE = re.compile(r"([.?!:])\s+-\s+(?=[A-ZÀ-Ỹ0-9])")
 
 _BULLET_RE = re.compile(r"^\s*(?:[-–—•●○◦▪■□+*➢➤►✓✔]|\(?[a-zA-Zđ]\)|[a-zA-Zđ][\.\)](?=\s))\s*")
 _ENUM_PREFIX_RE = re.compile(r"^\s*(?:\(?\d{1,2}[\.\)]|\(?[a-zA-Zđ][\.\)]|[-–—•●○◦▪■□+*➢➤►✓✔])\s*")
@@ -49,6 +50,8 @@ def _clean_html_to_text(raw: Any) -> str:
         text = _HTML_TD_CLOSE_RE.sub(" ", text)
         text = _HTML_TAG_CHECK_RE.sub("", text)
         text = re.sub(r"\n{2,}", "\n", text)
+
+    text = _INLINE_BULLET_RE.sub(r"\1\n- ", text)
 
     cleaned_lines: list[str] = []
     prev_blank = False

@@ -4,6 +4,7 @@ const HTML_LI_CLOSE_RE = /<\/li>/gi;
 const HTML_BLOCK_BREAK_RE =
   /<\/?(?:ul|ol|p|div|section|article|blockquote|tr|h[1-6])\b[^>]*>|<br\s*\/?>/gi;
 const HTML_TD_CLOSE_RE = /<\/t[dh]\s*>/gi;
+const INLINE_BULLET_RE = /([.?!:])\s+-\s+(?=[A-ZÀ-Ỹ0-9])/g;
 
 /**
  * Chuyển chuỗi chứa thẻ HTML (<ul>, <li>, <p>, <br>...) sang văn bản thuần có xuống dòng gạch đầu dòng.
@@ -30,6 +31,8 @@ export function cleanHtmlToPlainText(raw?: string | null): string {
       .replace(new RegExp(HTML_TAG_CHECK_RE.source, 'g'), '')
       .replace(/\n{2,}/g, '\n');
   }
+
+  text = text.replace(INLINE_BULLET_RE, '$1\n- ');
 
   const lines: string[] = [];
   let prevBlank = false;
