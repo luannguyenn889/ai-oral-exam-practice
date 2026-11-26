@@ -25,8 +25,8 @@
         class="course-switcher-select"
         [(ngModel)]="embeddingProvider"
         (ngModelChange)="onEmbeddingProviderChange()"
-        [disabled]="isUploadingLocal"
-        [title]="isUploadingLocal ? 'Đang nạp tài liệu, không thể đổi model lúc này' : 'Chọn mô hình Embedding để lập chỉ mục và tìm kiếm thử'"
+        [disabled]="isUploadingLocal || isSyncing"
+        [title]="isUploadingLocal || isSyncing ? 'Đang đồng bộ/nạp tài liệu, không thể đổi model lúc này' : 'Chọn mô hình Embedding để lập chỉ mục và tìm kiếm thử'"
         aria-label="Chọn mô hình Embedding thử nghiệm"
       >
         <option value="local">Embedding: MiniLM-L12-v2 (Mặc định)</option>
@@ -45,6 +45,18 @@
         <option value="recursive">Chunking: Recursive tiêu đề &amp; câu (Mặc định)</option>
         <option value="semantic">Chunking: Semantic theo ngữ nghĩa (Embedding)</option>
         <option value="legacy">Chunking: Boundary 600 ký tự (Cách cũ)</option>
+      </select>
+
+      <select
+        class="course-switcher-select"
+        [(ngModel)]="rerankerProvider"
+        (ngModelChange)="onRerankerProviderChange()"
+        [disabled]="isUploadingLocal || isSyncing"
+        [title]="isUploadingLocal || isSyncing ? 'Đang đồng bộ/nạp tài liệu, vui lòng chờ hoàn tất' : 'Chọn mô hình Cross-Encoder Rerank khi soạn câu hỏi và truy vấn'"
+        aria-label="Chọn mô hình Cross-Encoder Rerank"
+      >
+        <option value="minilm">Rerank: ms-marco-MiniLM (Nhẹ · CPU)</option>
+        <option value="bge-m3">Rerank: BAAI/bge-reranker-v2-m3 (Đa ngôn ngữ Việt-Anh)</option>
       </select>
 
       @if (ragCourseCode) {
@@ -103,7 +115,7 @@
     <div class="rag-sync-banner" role="status" aria-live="polite">
       <div class="rag-sync-banner__row">
         <div class="rag-sync-banner__left">
-          <span class="material-symbols-outlined spin">progress_activity</span>
+          <span class="ui-spinner" aria-hidden="true" style="color: #0284c7;"></span>
           <div>
             <strong>
               Đang đồng bộ &amp; lập chỉ mục kho RAG ({{ ragCourseCode }}) — {{ syncPercent }}%
@@ -332,13 +344,13 @@
                 }
                 @case ('uploading') {
                   <span class="staged-file-badge staged-file-badge--running">
-                    <span class="material-symbols-outlined spin">progress_activity</span>
+                    <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
                     Đang tải {{ item.uploadPercent }}%
                   </span>
                 }
                 @case ('processing') {
                   <span class="staged-file-badge staged-file-badge--running">
-                    <span class="material-symbols-outlined spin">progress_activity</span>
+                    <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
                     Đang lập chỉ mục...
                   </span>
                 }
@@ -375,17 +387,17 @@
           <button
             type="button"
             class="btn btn--primary staged-submit-btn"
+            [class.btn--ai-running]="isUploadingLocal"
             (click)="processStagedFiles()"
             [disabled]="isUploadingLocal || pendingOrErrorCount === 0"
           >
-            <span class="material-symbols-outlined" [class.spin]="isUploadingLocal">
-              {{ isUploadingLocal ? 'progress_activity' : 'rocket_launch' }}
-            </span>
-            {{
-              isUploadingLocal
-                ? (uploadingProgressText || 'Đang tải lên & lập chỉ mục RAG...')
-                : 'Bắt đầu tải lên & Xử lý RAG (' + pendingOrErrorCount + ' tệp)'
-            }}
+            @if (isUploadingLocal) {
+              <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+              <span>{{ uploadingProgressText || 'Đang tải lên &amp; lập chỉ mục RAG...' }}</span>
+            } @else {
+              <span class="material-symbols-outlined">rocket_launch</span>
+              <span>Bắt đầu tải lên &amp; Xử lý RAG ({{ pendingOrErrorCount }} tệp)</span>
+            }
           </button>
         </div>
       </div>

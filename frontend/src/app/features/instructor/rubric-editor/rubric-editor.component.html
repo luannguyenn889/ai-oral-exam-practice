@@ -125,18 +125,18 @@
         <button
           type="button"
           class="btn btn--sm btn--ai-suggest"
+          [class.btn--ai-running]="isSuggestingRubric"
           [disabled]="isSuggestingRubric || !question"
           (click)="suggestRubricWithAi()"
           title="AI chia 3-4 tiêu chí thang 10.0đ bám sát Đáp án mẫu và giáo trình RAG"
         >
-          <span class="material-symbols-outlined" [class.spin]="isSuggestingRubric">
-            {{ isSuggestingRubric ? 'progress_activity' : 'auto_awesome' }}
-          </span>
-          {{
-            isSuggestingRubric
-              ? 'AI đang đề xuất Rubric...'
-              : 'AI đề xuất tiêu chí Rubric (10đ)'
-          }}
+          @if (isSuggestingRubric) {
+            <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+            <span>AI đang đề xuất Rubric ({{ formatAiElapsed() }})</span>
+          } @else {
+            <span class="material-symbols-outlined">auto_awesome</span>
+            <span>AI đề xuất tiêu chí Rubric (10đ)</span>
+          }
         </button>
         <span class="template-label">Mẫu nhanh:</span>
         <button
@@ -155,6 +155,21 @@
         </button>
       </div>
     </div>
+
+    @if (isSuggestingRubric) {
+      <div class="ai-progress-card" role="status" aria-live="polite">
+        <div class="ai-progress-card__top">
+          <span class="ai-progress-card__label">
+            <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+            Đang đối chiếu Đáp án mẫu &amp; giáo trình RAG để chia tiêu chí thang 10.0đ...
+          </span>
+          <span class="ai-progress-card__timer">{{ formatAiElapsed() }}</span>
+        </div>
+        <div class="ai-progress-card__track">
+          <div class="ai-progress-card__bar"></div>
+        </div>
+      </div>
+    }
 
     <!-- Human-in-the-loop Banner khi AI vừa đề xuất Rubric -->
     @if (rubricReviewStatus === 'ai_draft' || rubricReviewStatus === 'approved') {

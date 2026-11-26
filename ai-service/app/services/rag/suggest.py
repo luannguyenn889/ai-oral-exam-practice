@@ -23,8 +23,15 @@ from app.services.extractor.common import (
     _generate_tailored_sample_answer,
 )
 from app.services.gemini_client import has_gemini_api_key, run_with_gemini_client
-from app.services.rag.course_config import resolve_course_embedding_provider
-from app.services.rag.embeddings import get_active_embedding_name, normalize_course_id
+from app.services.rag.course_config import (
+    resolve_course_embedding_provider,
+    resolve_course_reranker_provider,
+)
+from app.services.rag.embeddings import (
+    get_active_embedding_name,
+    get_active_reranker_name,
+    normalize_course_id,
+)
 from app.services.rag.store import format_rag_context, query_relevant_chunks
 
 HITL_NOTICE = (
@@ -103,16 +110,19 @@ def suggest_reference_answer(
     include_rubric: bool = False,
     selected_chunk_ids: Optional[list[str]] = None,
     embedding_provider: Optional[str] = None,
+    reranker_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
 ) -> dict[str, Any]:
     """Truy xuất RAG và nhờ AI khởi tạo bản nháp Đáp án mẫu (+ tùy chọn Rubric) cho giảng viên duyệt."""
     normalized_course = normalize_course_id(course_id)
     effective_provider = resolve_course_embedding_provider(normalized_course, embedding_provider)
+    effective_reranker = resolve_course_reranker_provider(normalized_course, reranker_provider)
     active_embedding_model = get_active_embedding_name(effective_provider)
+    active_reranker_model = get_active_reranker_name(effective_reranker)
     query_parts = [p.strip() for p in [topic or "", question] if p and p.strip()]
     search_query = " — ".join(query_parts) if query_parts else question
 
-    # 1. Truy xuất các đoạn giáo trình liên quan bằng Hybrid RAG theo đúng embedding của học phần
+    # 1. Truy xuất các đoạn giáo trình liên quan bằng Hybrid RAG theo đúng embedding & reranker của học phần
     try:
         retrieved_chunks = query_relevant_chunks(
             query_text=search_query,
@@ -121,6 +131,7 @@ def suggest_reference_answer(
             search_mode=search_mode,
             use_rerank=True,
             embedding_provider=effective_provider,
+            reranker_provider=effective_reranker,
         )
     except Exception:
         retrieved_chunks = []
@@ -152,6 +163,8 @@ def suggest_reference_answer(
             "used_chunk_ids": used_chunk_ids,
             "embedding_provider": effective_provider,
             "embedding_model": active_embedding_model,
+            "reranker_provider": effective_reranker,
+            "reranker_model": active_reranker_model,
             "llm_model": "mock-fallback" if target_model.lower() != "mock" else "mock",
             "status": "ai_draft",
             "notice": HITL_NOTICE,
@@ -258,6 +271,8 @@ def suggest_reference_answer(
             "used_chunk_ids": used_chunk_ids,
             "embedding_provider": effective_provider,
             "embedding_model": active_embedding_model,
+            "reranker_provider": effective_reranker,
+            "reranker_model": active_reranker_model,
             "llm_model": target_model,
             "status": "ai_draft",
             "notice": HITL_NOTICE,
@@ -277,6 +292,8 @@ def suggest_reference_answer(
             "used_chunk_ids": used_chunk_ids,
             "embedding_provider": effective_provider,
             "embedding_model": active_embedding_model,
+            "reranker_provider": effective_reranker,
+            "reranker_model": active_reranker_model,
             "llm_model": f"{target_model} (fallback)",
             "status": "ai_draft",
             "notice": HITL_NOTICE,

@@ -161,6 +161,7 @@ def search_course_documents(request: RagSearchRequest) -> RagSearchResponse:
             search_mode=request.search_mode,
             use_rerank=request.use_rerank,
             embedding_provider=request.embedding_provider,
+            reranker_provider=request.reranker_provider,
         )
         formatted = rag_service.format_rag_context(chunks)
         results = [
@@ -210,6 +211,7 @@ def suggest_reference_answer_endpoint(
             include_rubric=request.include_rubric,
             selected_chunk_ids=request.selected_chunk_ids,
             embedding_provider=request.embedding_provider,
+            reranker_provider=request.reranker_provider,
             llm_model=request.llm_model,
         )
         rag_refs = [
@@ -244,6 +246,8 @@ def suggest_reference_answer_endpoint(
             used_chunk_ids=result.get("used_chunk_ids", []),
             embedding_provider=result.get("embedding_provider", "local"),
             embedding_model=result.get("embedding_model", ""),
+            reranker_provider=result.get("reranker_provider", "minilm"),
+            reranker_model=result.get("reranker_model", ""),
             llm_model=result["llm_model"],
             status="ai_draft",
             notice=result["notice"],
@@ -264,6 +268,8 @@ def get_course_rag_config_endpoint(course_id: str) -> CourseRagConfigResponse:
         embedding_provider=cfg["embedding_provider"],
         chunking_strategy=cfg["chunking_strategy"],
         embedding_model=rag_service.get_active_embedding_name(cfg["embedding_provider"]),
+        reranker_provider=cfg["reranker_provider"],
+        reranker_model=rag_service.get_active_reranker_name(cfg["reranker_provider"]),
     )
 
 
@@ -276,12 +282,15 @@ def update_course_rag_config_endpoint(
         course_id=course_id,
         embedding_provider=request.embedding_provider,
         chunking_strategy=request.chunking_strategy,
+        reranker_provider=request.reranker_provider,
     )
     return CourseRagConfigResponse(
         course_id=cfg["course_id"],
         embedding_provider=cfg["embedding_provider"],
         chunking_strategy=cfg["chunking_strategy"],
         embedding_model=rag_service.get_active_embedding_name(cfg["embedding_provider"]),
+        reranker_provider=cfg["reranker_provider"],
+        reranker_model=rag_service.get_active_reranker_name(cfg["reranker_provider"]),
     )
 
 

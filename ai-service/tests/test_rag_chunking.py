@@ -241,6 +241,14 @@ def test_low_value_rag_chunk_filtering_at_index_and_query() -> None:
         "Process for Small Teams'. IEEE Software, 17 (4), 26–32. Schwaber, K. (2004). Agile Project "
         "Management with Scrum. Schwaber, K. and Beedle, M. (2001). Agile Software Development with Scrum."
     )
+    refs_ieee_noise = (
+        "[MTTF = > 8.6 Summary]\n"
+        "Software engineering. IEEE Transactions on Computers, 25(12), Dec. 1976.\n"
+        "[11] B. Boehm. Tutorial: software risk management. IEEE Computer Society, 1989. "
+        "[12] B. W. Boehm. Software Engineering Economics. Prentice Hall, Englewood Cliffs, NJ, 1981. "
+        "[13] B. W. Boehm. Software engineering economics. IEEE Transactions on Software Engineering, 10(1):135–152, Jan. 1984. "
+        "[14] B. W. Boehm. Improving software productivity. IEEE Computer, pages 43–57, Sept. 1987."
+    )
     toc_noise = (
         "Chapter 1. Introduction .......................... 12\n"
         "Chapter 2. Software Processes .................... 34\n"
@@ -254,6 +262,7 @@ def test_low_value_rag_chunk_filtering_at_index_and_query() -> None:
 
     assert rag_service.is_low_value_rag_chunk(index_noise) is True
     assert rag_service.is_low_value_rag_chunk(refs_noise) is True
+    assert rag_service.is_low_value_rag_chunk(refs_ieee_noise) is True
     assert rag_service.is_low_value_rag_chunk(toc_noise) is True
     assert rag_service.is_low_value_rag_chunk(valid_prose) is False
 
@@ -312,6 +321,93 @@ def test_low_value_rag_chunk_filtering_at_index_and_query() -> None:
         assert "iterative delivery" in results[0]["text"]
 
 
+def test_multiformat_noise_filter_and_heading_validation() -> None:
+    # 1. Tầng 1: Không nhận nhầm ISBN / Index / Ký hiệu / Code comment thành tiêu đề mục (tránh bẩn breadcrumb)
+    dirty_headings_doc = (
+        "ISBN: 978-1-84800-301-9\n"
+        "COCOMO, 71\n"
+        "IEEE\n"
+        "// APP-SYSTEM/AUTH/RBAC/USER_ROLE\n"
+        "2.3.1 Waterfall Model\n"
+        "The waterfall model organizes software development into sequential phases: "
+        "requirements analysis, system design, implementation, testing, deployment, and maintenance.\n\n"
+        "FURTHER RE ADING\n"
+        "Bowen, J. P. and Hinchey, M. G., IEEE Computer, 39 (1), January 2006. http://dx.doi.org/10.1109/MC.2006.35.\n"
+        "Kitchenham, R. Jeffrey, IEEE Software, 24 (2), March 2007. http://dx.doi.org/10.1109/MS.2007.49."
+    )
+    cleaned_chunks = rag_service.chunk_text(
+        dirty_headings_doc,
+        source_name="concise.pdf",
+        course_id="SE_MULTI",
+        strategy="recursive",
+    )
+    assert len(cleaned_chunks) == 1
+    assert cleaned_chunks[0]["section_title"] == "2.3.1 Waterfall Model"
+    assert "ISBN" not in cleaned_chunks[0]["text"]
+    assert "COCOMO" not in cleaned_chunks[0]["text"]
+    assert "IEEE" not in cleaned_chunks[0]["section_title"]
+
+    # 2. Tầng 2: Bắt đa định dạng rác (Further Reading + DOI, Copyright CIP, References tiếng Việt, Index ngắn, TOC không chấm)
+    further_reading_doi = (
+        "[Chapter 24 | Quality management]\n"
+        "Kitchenham, R. Jeffrey and C. Connaughton, IEEE Software, 24 (2), March-April 2007.) "
+        "http://dx.doi.org/10.1109/MS.2007.49. 'The Case for Quantitative Project Management'. "
+        "Bowen, J. P. and M. G. Hinchey, IEEE Computer, 39 (1), January 2006.) http://dx.doi.org/10.1109/MC.2006.35."
+    )
+    copyright_cip = (
+        "Library of Congress Cataloging-in-Publication Data\n"
+        "Sommerville, Ian\nSoftware engineering / Ian Sommerville. — 9th ed.\np. cm.\n"
+        "All rights reserved. No part of this publication may be reproduced."
+    )
+    vn_references = (
+        "TÀI LIỆU THAM KHẢO\n"
+        "[1] Nguyễn Văn A (2020), Kỹ thuật phần mềm, NXB Giáo dục, tr. 45-60.\n"
+        "[2] Trần Thị B (2021), Phân tích thiết kế hệ thống, NXB Khoa học và Kỹ thuật, tr. 12-30."
+    )
+    short_index = "103 story cards and, 66, 67 success criteria and, 272–73 task cards and, 68, 69"
+    tabular_toc = (
+        "Chapter 1 Introduction      1\n"
+        "Chapter 2 Software Processes      27\n"
+        "Chapter 3 Agile Software Development      56\n"
+        "Chapter 4 Requirements Engineering      82\n"
+    )
+    header_comment_noise = (
+        "// Object: currentRole\n// Author: R. Looek\n// Creation date: 13/11/2009\n"
+        "// © St Andrews University 2009\n// Modification history\n// Version 1.0"
+    )
+
+    for sample in (
+        further_reading_doi,
+        copyright_cip,
+        vn_references,
+        short_index,
+        tabular_toc,
+        header_comment_noise,
+    ):
+        prof = rag_service.compute_noise_profile(sample)
+        assert prof["is_noise"] is True, f"Expected noise=True for {sample[:60]!r}, got {prof}"
+
+    # 3. Bảo vệ nội dung hợp lệ: slide gạch đầu dòng ngắn, bảng DOCX, và code thật
+    slide_bullets = (
+        "[Chương 3 > 3.2 Quy trình Scrum]\n"
+        "- Product Backlog chứa danh sách yêu cầu ưu tiên.\n"
+        "- Sprint kéo dài từ 2 đến 4 tuần.\n"
+        "- Daily Standup giúp nhóm đồng bộ tiến độ mỗi ngày."
+    )
+    real_code = (
+        "[Chương 4 > 4.2 Cài đặt QuickSort]\n"
+        "def quicksort(arr):\n"
+        "    if len(arr) <= 1:\n"
+        "        return arr\n"
+        "    pivot = arr[len(arr) // 2]\n"
+        "    return quicksort([x for x in arr if x < pivot])"
+    )
+    assert rag_service.compute_noise_profile(slide_bullets)["is_noise"] is False
+    code_prof = rag_service.compute_noise_profile(real_code)
+    assert code_prof["is_noise"] is False
+    assert code_prof["noise_type"] == "code"
+
+
 if __name__ == "__main__":
     test_legacy_chunking_preserved()
     test_recursive_chunking_heading_aware()
@@ -321,4 +417,5 @@ if __name__ == "__main__":
     test_generic_pdf_running_header_footer_and_page_stitch()
     test_docx_interleaved_table_and_header_repeat()
     test_low_value_rag_chunk_filtering_at_index_and_query()
-    print(">>> ALL 8 RAG CHUNKING TESTS PASSED! <<<")
+    test_multiformat_noise_filter_and_heading_validation()
+    print(">>> ALL 9 RAG CHUNKING TESTS PASSED! <<<")

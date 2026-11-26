@@ -209,6 +209,9 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
     effective_provider = rag_service.resolve_course_embedding_provider(
         request.course_id, request.rag_config.embedding_provider
     )
+    effective_reranker = rag_service.resolve_course_reranker_provider(
+        request.course_id, request.rag_config.reranker_provider
+    )
 
     # 1. Truy xuất ngữ cảnh giáo trình bằng Hybrid RAG (nếu bật)
     rag_chunks: list[dict[str, Any]] = []
@@ -225,6 +228,7 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
             search_mode=request.rag_config.search_mode,
             use_rerank=request.rag_config.use_rerank,
             embedding_provider=effective_provider,
+            reranker_provider=effective_reranker,
         )
         rag_context_str = rag_service.format_rag_context(rag_chunks)
         for chunk in rag_chunks:

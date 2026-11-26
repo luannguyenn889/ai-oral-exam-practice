@@ -50,23 +50,30 @@ def run_course_rag_config_sync_test() -> None:
                 CourseRagConfigUpdateRequest(
                     embedding_provider="e5-small",
                     chunking_strategy="semantic",
+                    reranker_provider="bge-m3",
                 ),
             )
             assert updated.course_id == "SOFTWAREIT"
             assert updated.embedding_provider == "e5-small"
             assert updated.chunking_strategy == "semantic"
             assert "e5-small" in updated.embedding_model
+            assert updated.reranker_provider == "bge-m3"
+            assert updated.reranker_model == "BAAI/bge-reranker-v2-m3"
 
             fetched = rag.get_course_rag_config_endpoint("SOFTWARE IT")
             assert fetched.embedding_provider == "e5-small"
             assert fetched.chunking_strategy == "semantic"
+            assert fetched.reranker_provider == "bge-m3"
+            assert fetched.reranker_model == "BAAI/bge-reranker-v2-m3"
 
-            # 2. GET /ai/rag/status không truyền embedding_provider vẫn trả đúng e5-small & semantic đã lưu
+            # 2. GET /ai/rag/status không truyền embedding_provider vẫn trả đúng e5-small, semantic & bge-m3 đã lưu
             with patch.object(rag_store, "get_chroma_collection", return_value=fake_collection):
                 status_resp = rag.get_course_rag_status(course_id="SOFTWARE IT", embedding_provider=None)
                 assert status_resp.embedding_provider == "e5-small"
                 assert status_resp.chunking_strategy == "semantic"
                 assert "e5-small" in status_resp.embedding_model
+                assert status_resp.reranker_provider == "bge-m3"
+                assert status_resp.reranker_model == "BAAI/bge-reranker-v2-m3"
 
             # 3. POST /ai/rag/suggest-answer (Soạn câu hỏi & Soạn Rubric) tự động dùng e5-small của học phần
             captured_suggest_calls: list[dict[str, object]] = []
@@ -100,9 +107,12 @@ def run_course_rag_config_sync_test() -> None:
                 )
                 assert len(captured_suggest_calls) == 1
                 assert captured_suggest_calls[0]["embedding_provider"] == "e5-small"
+                assert captured_suggest_calls[0]["reranker_provider"] == "bge-m3"
                 assert captured_suggest_calls[0]["use_rerank"] is True
                 assert suggest_resp.embedding_provider == "e5-small"
                 assert "e5-small" in suggest_resp.embedding_model
+                assert suggest_resp.reranker_provider == "bge-m3"
+                assert suggest_resp.reranker_model == "BAAI/bge-reranker-v2-m3"
                 assert len(suggest_resp.suggested_criteria) > 0
 
             # 4. Chấm bài (/ai/evaluations) tự động dùng e5-small của học phần khi không truyền embedding_provider

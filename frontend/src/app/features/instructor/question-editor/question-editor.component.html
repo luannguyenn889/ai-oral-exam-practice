@@ -163,20 +163,17 @@
             <button
               type="button"
               class="btn btn--secondary btn--sm"
+              [class.btn--ai-running]="isSuggestingAnswer"
               [disabled]="isSuggestingAnswer"
               (click)="generateAiAnswerFromRag(false)"
             >
-              <span
-                class="material-symbols-outlined"
-                [class.spin]="isSuggestingAnswer"
-              >
-                {{ isSuggestingAnswer ? 'progress_activity' : 'auto_awesome' }}
-              </span>
-              {{
-                isSuggestingAnswer
-                  ? 'AI đang truy xuất RAG & soạn nháp...'
-                  : 'AI gợi ý Đáp án từ giáo trình (RAG)'
-              }}
+              @if (isSuggestingAnswer) {
+                <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+                <span>AI đang truy xuất RAG &amp; soạn nháp ({{ formatAiElapsed() }})</span>
+              } @else {
+                <span class="material-symbols-outlined">auto_awesome</span>
+                <span>AI gợi ý Đáp án từ giáo trình (RAG)</span>
+              }
             </button>
 
             @if (answerReviewStatus === 'ai_draft' && sampleAnswer.trim()) {
@@ -186,16 +183,32 @@
                 (click)="approveAnswer()"
               >
                 <span class="material-symbols-outlined">task_alt</span>
-                Xác nhận & Duyệt đáp án
+                Xác nhận &amp; Duyệt đáp án
               </button>
             }
           </div>
+
+          @if (isSuggestingAnswer) {
+            <div class="ai-progress-card" role="status" aria-live="polite">
+              <div class="ai-progress-card__top">
+                <span class="ai-progress-card__label">
+                  <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+                  {{ aiRunningStepText }}
+                </span>
+                <span class="ai-progress-card__timer">{{ formatAiElapsed() }}</span>
+              </div>
+              <div class="ai-progress-card__track">
+                <div class="ai-progress-card__bar"></div>
+              </div>
+            </div>
+          }
 
           <div class="form-group">
             <textarea
               id="sample-answer"
               rows="6"
               class="form-textarea"
+              [class.form-textarea--ai-busy]="isSuggestingAnswer"
               placeholder="Nêu các luận điểm chính, từ khóa cốt lõi, ví dụ thực tế mà thí sinh cần đạt được để có điểm tối đa..."
               [(ngModel)]="sampleAnswer"
               (ngModelChange)="onSampleAnswerChange()"
@@ -214,6 +227,9 @@
                     @if (ragSuggestEmbeddingModel) {
                       <span class="rag-score-pill">Embedding: {{ ragSuggestEmbeddingModel }}</span>
                     }
+                    @if (ragSuggestRerankerModel) {
+                      <span class="rag-score-pill">Rerank: {{ ragSuggestRerankerModel }}</span>
+                    }
                   </h3>
                   <p class="rag-review-panel__hint">
                     Bỏ chọn các đoạn trích bị nhiễu hoặc lệch chủ đề, sau đó bấm tạo lại để AI bám đúng phần kiến thức giảng viên duyệt.
@@ -223,10 +239,15 @@
                 <button
                   type="button"
                   class="btn btn--ghost btn--sm"
+                  [class.btn--ai-running]="isSuggestingAnswer"
                   [disabled]="isSuggestingAnswer || selectedRagCount === 0"
                   (click)="generateAiAnswerFromRag(true)"
                 >
-                  <span class="material-symbols-outlined">refresh</span>
+                  @if (isSuggestingAnswer) {
+                    <span class="ui-spinner ui-spinner--sm" aria-hidden="true"></span>
+                  } @else {
+                    <span class="material-symbols-outlined">refresh</span>
+                  }
                   Tạo lại từ {{ selectedRagCount }} đoạn đã chọn
                 </button>
               </div>

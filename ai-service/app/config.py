@@ -34,15 +34,19 @@ class Settings(BaseSettings):
     e5_embedding_model_name: str = "intfloat/multilingual-e5-small"
     gemini_embedding_model_name: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = 768
-    gemini_embedding_batch_size: int = 100
-    gemini_embedding_max_workers: int = 3
+    gemini_embedding_batch_size: int = 50
+    gemini_embedding_max_workers: int = 2
+    reranker_provider: str = "minilm"
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    bge_reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
     ollama_base_url: str = "http://localhost:11434"
 
     data_dir: str = "data"
     documents_dir: str = "data/documents"
     chroma_db_dir: str = "data/chroma_db"
     collection_prefix: str = "qnu_viva_documents"
+    rag_noise_drop_threshold: float = 0.70
+    rag_noise_penalty_threshold: float = 0.40
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE_PATH),

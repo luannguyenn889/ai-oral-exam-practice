@@ -38,6 +38,8 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
 
   // Human-in-the-loop: AI đề xuất Rubric thang 10 từ Đáp án mẫu & giáo trình RAG
   isSuggestingRubric = false;
+  aiElapsedSeconds = 0;
+  private aiTimerId: ReturnType<typeof setInterval> | null = null;
   rubricReviewStatus: 'manual' | 'ai_draft' | 'approved' = 'manual';
   rubricApprovedAt = '';
   ragReferences: RagChunkResult[] = [];
@@ -88,6 +90,28 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
     if (this.autoSaveTimer !== null) {
       clearTimeout(this.autoSaveTimer);
       this.autoSaveTimer = null;
+    }
+    this.stopAiTimer();
+  }
+
+  formatAiElapsed(): string {
+    const mins = Math.floor(this.aiElapsedSeconds / 60);
+    const secs = this.aiElapsedSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  private startAiTimer(): void {
+    this.stopAiTimer();
+    this.aiElapsedSeconds = 0;
+    this.aiTimerId = setInterval(() => {
+      this.aiElapsedSeconds += 1;
+    }, 1000);
+  }
+
+  private stopAiTimer(): void {
+    if (this.aiTimerId !== null) {
+      clearInterval(this.aiTimerId);
+      this.aiTimerId = null;
     }
   }
 
@@ -305,6 +329,7 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
     }
 
     this.isSuggestingRubric = true;
+    this.startAiTimer();
     this.aiRagService
       .suggestReferenceAnswer({
         courseId: this.ragCourseCode,
@@ -318,6 +343,7 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (res) => {
           this.isSuggestingRubric = false;
+          this.stopAiTimer();
           this.ragReferences = res.ragReferences || [];
           const suggested = res.suggestedCriteria || [];
           if (suggested.length === 0) {
@@ -342,6 +368,7 @@ export class RubricEditorComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.isSuggestingRubric = false;
+          this.stopAiTimer();
           this.toastService.error(
             'Không thể kết nối AI Service để đề xuất Rubric. Hãy kiểm tra AI Service đang chạy.',
           );

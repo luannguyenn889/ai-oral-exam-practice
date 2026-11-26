@@ -30,6 +30,10 @@ class RagConfig(BaseModel):
         default=None,
         description="Ghi đè embedding provider; nếu để trống sẽ tự dùng cấu hình RAG đã lưu của học phần",
     )
+    reranker_provider: Optional[Literal["minilm", "bge-m3"]] = Field(
+        default=None,
+        description="Ghi đè mô hình rerank ('minilm' hoặc 'bge-m3'); nếu để trống sẽ dùng cấu hình của học phần",
+    )
 
 
 class EvaluationRequest(BaseModel):

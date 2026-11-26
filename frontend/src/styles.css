@@ -142,3 +142,126 @@ body {
   padding: 0 var(--space-4);
 }
 
+/* Smooth Spinner & AI Running States */
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ai-btn-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes ai-progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.spin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  animation: ui-spin 0.85s linear infinite;
+}
+
+.ui-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: ui-spin 0.72s cubic-bezier(0.55, 0.15, 0.45, 0.85) infinite;
+}
+
+.ui-spinner--sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.ui-spinner--lg {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+
+.btn.btn--ai-running:disabled,
+.btn.btn--ai-running[disabled] {
+  opacity: 1;
+  color: #0369a1;
+  border-color: #7dd3fc;
+  background: linear-gradient(110deg, #eff6ff 0%, #e0f2fe 45%, #f0f9ff 70%, #eff6ff 100%);
+  background-size: 220% 100%;
+  animation: ai-btn-shimmer 1.8s ease-in-out infinite;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+  font-weight: 600;
+}
+
+.ai-progress-card {
+  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.625rem;
+  background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+  border: 1px solid #bae6fd;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ai-progress-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ai-progress-card__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.ai-progress-card__timer {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0284c7;
+  background-color: #e0f2fe;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+}
+
+.ai-progress-card__track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background-color: #e0f2fe;
+  overflow: hidden;
+}
+
+.ai-progress-card__bar {
+  width: 42%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #0284c7, #38bdf8);
+  animation: ai-progress-sweep 1.35s ease-in-out infinite;
+}
+

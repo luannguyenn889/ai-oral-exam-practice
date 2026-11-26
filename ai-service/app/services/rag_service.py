@@ -29,6 +29,7 @@ from app.services.rag.chunking import (
     chunk_text_legacy,
     chunk_text_recursive,
     chunk_text_semantic,
+    compute_noise_profile,
     get_chunking_strategy_label,
     get_clean_overlap,
     is_low_value_rag_chunk,
@@ -40,18 +41,22 @@ from app.services.rag.course_config import (
     rename_course_rag_config,
     resolve_course_chunking_strategy,
     resolve_course_embedding_provider,
+    resolve_course_reranker_provider,
     set_course_rag_config,
 )
 from app.services.rag.embeddings import (
     EMBEDDING_PROVIDERS,
     FILLER_PATTERNS,
+    RERANKER_PROVIDERS,
     clean_oral_query,
     embed_texts,
     get_active_embedding_name,
+    get_active_reranker_name,
     get_embedding_model,
     get_reranker_model,
     normalize_course_id,
     normalize_embedding_provider,
+    normalize_reranker_provider,
     tokenize_text,
 )
 from app.services.rag.extractors import (
