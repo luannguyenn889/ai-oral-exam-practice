@@ -1,0 +1,167 @@
+{
+  "ragStatus": {
+    "course_id": "IT2030",
+    "status": "ready",
+    "total_chunks": 128,
+    "total_files": 1,
+    "files": ["Sommerville - Software Engineering 9ed.pdf"],
+    "embedding_provider": "e5-small",
+    "embedding_model": "intfloat/multilingual-e5-small",
+    "reranker_provider": "bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3",
+    "chunking_strategy": "recursive",
+    "hybrid_bm25_active": true,
+    "reranker_enabled_by_default": false,
+    "search_modes_available": ["dense", "bm25", "hybrid"],
+    "features": ["Heading-aware Recursive Chunking", "BM25 Okapi", "Cross-Encoder Rerank"],
+    "error": null
+  },
+  "searchResponse": {
+    "course_id": "IT2030",
+    "query_text": "Trình bày mô hình thác nước",
+    "cleaned_query": "Trình bày mô hình thác nước",
+    "search_mode": "hybrid",
+    "top_k": 3,
+    "results": [
+      {
+        "chunk_id": "IT2030::sommerville.pdf_chunk_10",
+        "source": "Sommerville - Software Engineering 9ed.pdf",
+        "course_id": "IT2030",
+        "index": 10,
+        "text": "[Chapter 2 | Software processes > 2.1 Software process models]\nThe waterfall model takes the fundamental process activities of specification, development, validation, and evolution and represents them as separate process phases.",
+        "retrieved_by": "dense + BM25",
+        "dense_sim": 0.84,
+        "bm25_score": 6.2,
+        "rrf_score": 0.0328,
+        "rerank_score": 0.91,
+        "method": "Hybrid RRF"
+      }
+    ],
+    "formatted_context": "[Đoạn trích 1] The waterfall model..."
+  },
+  "suggestAnswerResponse": {
+    "course_id": "IT2030",
+    "sample_answer": "- Mô hình thác nước gồm các pha tuần tự: đặc tả yêu cầu, thiết kế hệ thống, cài đặt, kiểm thử và bảo trì.\n- Phù hợp khi yêu cầu hệ thống ổn định ngay từ đầu.",
+    "suggested_criteria": [],
+    "rag_references": [
+      {
+        "chunk_id": "IT2030::sommerville.pdf_chunk_10",
+        "source": "Sommerville - Software Engineering 9ed.pdf",
+        "course_id": "IT2030",
+        "index": 10,
+        "text": "[Chapter 2 > 2.1 Software process models]\nThe waterfall model takes the fundamental process activities...",
+        "retrieved_by": "dense + BM25",
+        "dense_sim": 0.84,
+        "bm25_score": 6.2,
+        "rrf_score": 0.0328,
+        "rerank_score": 0.91,
+        "method": "Hybrid + Cross-Encoder Rerank"
+      },
+      {
+        "chunk_id": "IT2030::sommerville.pdf_chunk_11",
+        "source": "Sommerville - Software Engineering 9ed.pdf",
+        "course_id": "IT2030",
+        "index": 11,
+        "text": "[Chapter 2 > 2.1.1 Waterfall model]\nBecause of the costs of producing and approving documents, iterations can be costly.",
+        "retrieved_by": "dense",
+        "dense_sim": 0.81,
+        "bm25_score": null,
+        "rrf_score": 0.0161,
+        "rerank_score": 0.78,
+        "method": "Hybrid + Cross-Encoder Rerank"
+      }
+    ],
+    "used_chunk_ids": [
+      "IT2030::sommerville.pdf_chunk_10",
+      "IT2030::sommerville.pdf_chunk_11"
+    ],
+    "embedding_provider": "e5-small",
+    "embedding_model": "intfloat/multilingual-e5-small",
+    "reranker_provider": "bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3",
+    "llm_model": "gemini-2.5-flash",
+    "status": "ai_draft",
+    "notice": "Bản nháp do AI khởi tạo dựa trên giáo trình môn học (Hybrid RAG)."
+  },
+  "suggestRubricCriteria": [
+    {
+      "name": "Trình bày đúng các giai đoạn Waterfall",
+      "description": "Nêu đủ 5 pha tuần tự từ đặc tả đến bảo trì",
+      "max_score": 6.0
+    },
+    {
+      "name": "Phân tích ưu nhược điểm & bối cảnh áp dụng",
+      "description": "Giải thích được khi nào nên dùng Waterfall",
+      "max_score": 4.0
+    }
+  ],
+  "sttResponse": {
+    "raw_transcript": "dạ thưa thầy mô hình thác nước gồm phân tích yêu cầu thiết kế lập trình kiểm thử và bảo trì ạ",
+    "corrected_transcript": "Mô hình thác nước gồm phân tích yêu cầu, thiết kế, lập trình, kiểm thử và bảo trì.",
+    "duration_seconds": 6.5,
+    "stt_model": "whisper-large-v3",
+    "correction_model": "gemini-2.5-flash",
+    "processing_time_ms": 420
+  },
+  "evaluationResponse": {
+    "total_score": 8.5,
+    "max_score": 10.0,
+    "summary": "Sinh viên trả lời đúng trọng tâm các giai đoạn chính của mô hình Waterfall.",
+    "criteria": [
+      {
+        "criterion_id": "c1",
+        "score": 5.5,
+        "max_score": 6.0,
+        "evidence": "gồm phân tích yêu cầu, thiết kế, lập trình, kiểm thử và bảo trì",
+        "missing_or_incorrect": [],
+        "feedback": "Đủ các pha chính."
+      },
+      {
+        "criterion_id": "c2",
+        "score": 3.0,
+        "max_score": 4.0,
+        "evidence": "",
+        "missing_or_incorrect": ["Chưa nêu rõ hạn chế khi thay đổi yêu cầu"],
+        "feedback": "Cần bổ sung thêm bối cảnh áp dụng."
+      }
+    ],
+    "strengths": ["Nắm vững thứ tự 5 pha"],
+    "weaknesses": ["Thiếu phân tích hạn chế"],
+    "improvements": ["Bổ sung ví dụ dự án thực tế"],
+    "uncertainty_notes": [],
+    "needs_human_review": false,
+    "rag_references": [
+      {
+        "chunk_id": "IT2030::sommerville.pdf_chunk_10",
+        "source": "Sommerville - Software Engineering 9ed.pdf",
+        "retrieved_by": "dense + BM25",
+        "dense_sim": 0.84,
+        "rrf_score": 0.0328,
+        "text_preview": "The waterfall model takes the fundamental process activities..."
+      }
+    ],
+    "metadata": {
+      "llm_model": "gemini-2.5-flash",
+      "embedding_model": "intfloat/multilingual-e5-small",
+      "processing_time_ms": 1150
+    }
+  },
+  "extractQuestionsResponse": {
+    "source_file": "de_thi_cnpm.docx",
+    "total_detected": 1,
+    "error_count": 0,
+    "questions": [
+      {
+        "title": "Mô hình Waterfall",
+        "content": "Trình bày mô hình thác nước Waterfall.",
+        "topic": "Quy trình phần mềm",
+        "difficulty": "medium",
+        "sample_answer": "- Gồm 5 pha tuần tự.",
+        "total_score": 10.0,
+        "criteria": [
+          { "name": "Các pha", "description": "Đủ 5 pha", "max_score": 10.0 }
+        ]
+      }
+    ]
+  }
+}

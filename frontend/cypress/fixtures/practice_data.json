@@ -1,0 +1,182 @@
+{
+  "courses": [
+    {
+      "id": "course-it2030",
+      "code": "IT2030",
+      "name": "Công nghệ Phần mềm",
+      "description": "Quy trình phát triển phần mềm, Agile, Scrum và kiểm thử",
+      "questionCount": 2,
+      "createdAt": "2026-10-01T08:00:00Z"
+    },
+    {
+      "id": "course-it3080",
+      "code": "IT3080",
+      "name": "Mạng máy tính",
+      "description": "Mô hình OSI, TCP/IP và định tuyến",
+      "questionCount": 1,
+      "createdAt": "2026-10-02T08:00:00Z"
+    }
+  ],
+  "questions": [
+    {
+      "id": "q-waterfall-1",
+      "courseId": "course-it2030",
+      "courseCode": "IT2030",
+      "topic": "Quy trình phần mềm",
+      "title": "Mô hình thác nước (Waterfall)",
+      "content": "Trình bày các giai đoạn chính của mô hình thác nước và điều kiện áp dụng?",
+      "sampleAnswer": "- Gồm 5 giai đoạn tuần tự: Phân tích yêu cầu, Thiết kế hệ thống, Cài đặt, Kiểm thử, Bảo trì.\n- Phù hợp dự án yêu cầu rõ ràng và ít thay đổi.",
+      "difficulty": "medium",
+      "timeLimitSeconds": 180,
+      "tags": ["Waterfall", "Process"],
+      "rubric": {
+        "questionId": "q-waterfall-1",
+        "totalMaxScore": 10,
+        "gradingInstructions": "Chấm sát ý chính trong đáp án mẫu.",
+        "criteria": [
+          {
+            "id": "c1",
+            "name": "Các giai đoạn chính",
+            "description": "Nêu đủ 5 pha của mô hình Waterfall",
+            "maxScore": 6
+          },
+          {
+            "id": "c2",
+            "name": "Điều kiện áp dụng",
+            "description": "Nêu bối cảnh phù hợp và hạn chế",
+            "maxScore": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "q-scrum-2",
+      "courseId": "course-it2030",
+      "courseCode": "IT2030",
+      "topic": "Agile & Scrum",
+      "title": "Vai trò trong Scrum",
+      "content": "Phân biệt vai trò Product Owner và Scrum Master trong nhóm Scrum.",
+      "sampleAnswer": "- Product Owner quản lý Product Backlog và tối ưu giá trị sản phẩm.\n- Scrum Master hỗ trợ quy trình Scrum và tháo gỡ vướng mắc cho nhóm.",
+      "difficulty": "easy",
+      "timeLimitSeconds": 120,
+      "tags": ["Scrum", "Agile"],
+      "rubric": {
+        "questionId": "q-scrum-2",
+        "totalMaxScore": 10,
+        "criteria": [
+          {
+            "id": "c1",
+            "name": "Product Owner",
+            "description": "Quản lý backlog",
+            "maxScore": 5
+          },
+          {
+            "id": "c2",
+            "name": "Scrum Master",
+            "description": "Điều phối và hỗ trợ đội ngũ",
+            "maxScore": 5
+          }
+        ]
+      }
+    }
+  ],
+  "practiceRecords": [
+    {
+      "id": "sess-e2e-1",
+      "studentId": "stu-e2e-1",
+      "studentName": "Nguyễn Văn Sinh Viên",
+      "studentEmail": "student.e2e@qnu.edu.vn",
+      "studentCode": "4551050001",
+      "studentDepartment": "Công nghệ thông tin",
+      "courseId": "course-it2030",
+      "courseCode": "IT2030",
+      "courseName": "Công nghệ Phần mềm",
+      "questionId": "q-waterfall-1",
+      "questionTitle": "Mô hình thác nước (Waterfall)",
+      "status": "evaluated",
+      "transcript": "Em thưa thầy mô hình thác nước gồm phân tích yêu cầu, thiết kế, lập trình, kiểm thử và bảo trì.",
+      "audioUrl": "/api/practice-records/audio/e2e_sample.webm",
+      "totalScore": 8.5,
+      "maxScore": 10,
+      "needsHumanReview": false,
+      "reviewedByInstructor": false,
+      "createdAt": "2026-11-25T10:00:00Z",
+      "updatedAt": "2026-11-25T10:05:00Z",
+      "evaluation": {
+        "totalScore": 8.5,
+        "maxScore": 10,
+        "summary": "Sinh viên nắm chắc các pha cơ bản của mô hình Waterfall.",
+        "criteria": [
+          {
+            "criterionId": "c1",
+            "score": 5.5,
+            "maxScore": 6,
+            "evidence": "gồm phân tích yêu cầu, thiết kế, lập trình, kiểm thử và bảo trì",
+            "missingOrIncorrect": [],
+            "feedback": "Đầy đủ các giai đoạn chính."
+          },
+          {
+            "criterionId": "c2",
+            "score": 3.0,
+            "maxScore": 4,
+            "evidence": "",
+            "missingOrIncorrect": ["Chưa nêu nhược điểm khi yêu cầu thay đổi"],
+            "feedback": "Cần bổ sung thêm nhược điểm."
+          }
+        ],
+        "strengths": ["Trình bày mạch lạc đủ 5 pha"],
+        "weaknesses": ["Thiếu phân tích hạn chế khi yêu cầu thay đổi"],
+        "improvements": ["Nêu thêm ví dụ dự án phù hợp"],
+        "uncertaintyNotes": [],
+        "needsHumanReview": false,
+        "ragReferences": [],
+        "llmModel": "gemini-2.5-flash",
+        "embeddingModel": "intfloat/multilingual-e5-small",
+        "processingTimeMs": 950
+      }
+    }
+  ],
+  "instructorAnalytics": {
+    "totalAttempts": 24,
+    "averageScore": 7.4,
+    "needsReviewCount": 3,
+    "passRate": 83.3,
+    "courseSummaries": [
+      {
+        "courseCode": "IT2030",
+        "courseName": "Công nghệ Phần mềm",
+        "attempts": 24,
+        "averageScore": 7.4
+      }
+    ],
+    "weakTopics": [
+      {
+        "topic": "Điều kiện áp dụng Waterfall",
+        "missCount": 9,
+        "averageScore": 5.8
+      }
+    ]
+  },
+  "adminUsers": [
+    {
+      "id": "stu-e2e-1",
+      "fullName": "Nguyễn Văn Sinh Viên",
+      "email": "student.e2e@qnu.edu.vn",
+      "roles": ["student"],
+      "enabled": true
+    },
+    {
+      "id": "inst-e2e-1",
+      "fullName": "TS. Trần Giảng Viên",
+      "email": "instructor.e2e@qnu.edu.vn",
+      "roles": ["instructor"],
+      "enabled": true
+    }
+  ],
+  "adminOverview": {
+    "totalUsers": 120,
+    "totalCourses": 8,
+    "totalQuestions": 95,
+    "totalPracticeRecords": 340
+  }
+}
