@@ -210,6 +210,11 @@
   line-height: 1.5;
 }
 
+.form-textarea--ai-busy {
+  border-color: #7dd3fc;
+  background-color: #f8fafc;
+}
+
 /* Badges */
 .badge {
   display: inline-flex;

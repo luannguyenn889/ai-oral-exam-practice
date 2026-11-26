@@ -23,6 +23,7 @@ from app.services.rag.course_config import (
     get_course_rag_config,
     resolve_course_chunking_strategy,
     resolve_course_embedding_provider,
+    resolve_course_reranker_provider,
     set_course_rag_config,
 )
 from app.services.rag.chunking import (
@@ -30,13 +31,14 @@ from app.services.rag.chunking import (
     DEFAULT_CHUNKING_STRATEGY,
     chunk_text,
     get_chunking_strategy_label,
-    is_low_value_rag_chunk,
     normalize_chunking_strategy,
 )
+from app.services.rag.noise_filter import compute_noise_profile, is_low_value_rag_chunk
 from app.services.rag.embeddings import (
     clean_oral_query,
     embed_texts,
     get_active_embedding_name,
+    get_active_reranker_name,
     get_embedding_model,
     get_reranker_model,
     normalize_course_id,
@@ -134,6 +136,8 @@ def get_bm25_index(
                     "course_id": meta.get("course_id", norm_course),
                     "index": meta.get("index", 0),
                     "section_title": meta.get("section_title", ""),
+                    "noise_score": meta.get("noise_score"),
+                    "noise_type": meta.get("noise_type"),
                 }
             )
 
@@ -360,6 +364,8 @@ def index_documents(
                         "chunking_strategy": active_strategy,
                         "chunking_version": CHUNKING_VERSION,
                         "section_title": chunk.get("section_title", ""),
+                        "noise_score": float(chunk.get("noise_score", 0.0)),
+                        "noise_type": str(chunk.get("noise_type", "clean")),
                     }
                     for chunk in file_chunks
                 ],
@@ -427,6 +433,7 @@ def query_relevant_chunks(
     search_mode: str = "hybrid",
     use_rerank: bool = False,
     embedding_provider: Optional[str] = None,
+    reranker_provider: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Truy vấn nâng cao các đoạn giáo trình liên quan nhất (Hybrid Dense + BM25 + RRF + Optional Reranker)."""
     if not query_text or not query_text.strip():
@@ -492,6 +499,8 @@ def query_relevant_chunks(
                     "course_id": meta.get("course_id", norm_course),
                     "index": meta.get("index", 0),
                     "section_title": meta.get("section_title", ""),
+                    "noise_score": meta.get("noise_score"),
+                    "noise_type": meta.get("noise_type"),
                     "dense_sim": sim,
                     "dense_distance": round(float(dist), 4),
                     "dense_rank": rank,
@@ -524,6 +533,8 @@ def query_relevant_chunks(
                             "course_id": b_doc.get("course_id", norm_course),
                             "index": b_doc["index"],
                             "section_title": b_doc.get("section_title", ""),
+                            "noise_score": b_doc.get("noise_score"),
+                            "noise_type": b_doc.get("noise_type"),
                             "dense_sim": None,
                             "dense_rank": 999,
                             "bm25_score": round(score, 2),
@@ -537,12 +548,27 @@ def query_relevant_chunks(
     if not candidates:
         return []
 
+    drop_thr = float(getattr(settings, "rag_noise_drop_threshold", 0.70) or 0.70)
+    penalty_thr = float(getattr(settings, "rag_noise_penalty_threshold", 0.40) or 0.40)
     raw_candidates = list(candidates.values())
-    filtered_candidates = [
-        c
-        for c in raw_candidates
-        if not is_low_value_rag_chunk(str(c.get("text", "")), str(c.get("section_title", "")))
-    ]
+    filtered_candidates: list[dict[str, Any]] = []
+    for c in raw_candidates:
+        stored_score = c.get("noise_score")
+        stored_type = c.get("noise_type")
+        if isinstance(stored_score, (int, float)) and stored_type:
+            n_score = float(stored_score)
+            n_type = str(stored_type)
+        else:
+            prof = compute_noise_profile(
+                str(c.get("text", "")), str(c.get("section_title", ""))
+            )
+            n_score = float(prof["noise_score"])
+            n_type = str(prof["noise_type"])
+        c["noise_score"] = n_score
+        c["noise_type"] = n_type
+        if n_score < drop_thr:
+            filtered_candidates.append(c)
+
     candidate_list = filtered_candidates if filtered_candidates else raw_candidates
     k_constant = 60.0
     for c in candidate_list:
@@ -558,12 +584,17 @@ def query_relevant_chunks(
         score_bm25 = (
             1.0 / (k_constant + c["bm25_rank"]) if c.get("bm25_rank", 999) < 999 else 0.0
         )
-        c["rrf_score"] = round(score_dense + score_bm25, 5)
+        base_rrf = score_dense + score_bm25
+        n_score = float(c.get("noise_score", 0.0))
+        if penalty_thr <= n_score < drop_thr:
+            base_rrf *= max(0.3, 1.0 - 0.5 * n_score)
+        c["rrf_score"] = round(base_rrf, 5)
 
     candidate_list.sort(key=lambda x: x["rrf_score"], reverse=True)
 
     if use_rerank and len(candidate_list) > 1:
-        reranker = get_reranker_model()
+        effective_reranker = resolve_course_reranker_provider(norm_course, reranker_provider)
+        reranker = get_reranker_model(provider=effective_reranker)
         if reranker is not None:
             pairs = [[cleaned_query, c["text"]] for c in candidate_list]
             try:
@@ -650,7 +681,8 @@ def get_rag_status(
             "files": files,
             "embedding_provider": effective_provider,
             "embedding_model": get_active_embedding_name(effective_provider),
-            "reranker_model": settings.reranker_model_name,
+            "reranker_provider": saved_cfg.get("reranker_provider", "minilm"),
+            "reranker_model": get_active_reranker_name(saved_cfg.get("reranker_provider")),
             "chunking_strategy": indexed_strategy,
             "hybrid_bm25_active": has_bm25,
             "reranker_enabled_by_default": False,

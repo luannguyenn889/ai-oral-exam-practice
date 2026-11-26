@@ -20,10 +20,18 @@ from typing import Any, Callable, Optional
 
 from app.services.rag.embeddings import embed_texts as _embed_texts_impl
 from app.services.rag.embeddings import normalize_course_id
+from app.services.rag.noise_filter import (
+    apply_chunk_context_smoothing as _apply_chunk_context_smoothing,
+    compute_noise_profile,
+    is_allowed_uppercase_heading,
+    is_low_value_rag_chunk,
+    is_low_value_section_title as _is_low_value_section_title,
+    is_plausible_heading_line,
+)
 
 CHUNKING_STRATEGIES = ("recursive", "semantic", "legacy")
 DEFAULT_CHUNKING_STRATEGY = "recursive"
-CHUNKING_VERSION = "v3"
+CHUNKING_VERSION = "v4"
 
 CHUNKING_STRATEGY_LABELS = {
     "recursive": "Heading-aware Recursive Chunking (750 chars, sentence overlap)",
@@ -45,65 +53,6 @@ _PROSE_START_RE = re.compile(
     r"^(?:it|this|that|there|these|those|when|where|while|if|however|therefore|moreover|because|although|since|for|in|on|at|the|a|an|nếu|khi|vì|tuy|ngoài|đây|đó|nó|họ|chúng)\b",
     re.IGNORECASE,
 )
-_LOW_VALUE_SECTION_RE = re.compile(
-    r"^(?:index|author index|subject index|references|bibliography|further reading|table of contents|contents|mục lục|chỉ mục|tài liệu tham khảo)$",
-    re.IGNORECASE,
-)
-_TOC_DOT_LEADER_RE = re.compile(r"(?:\.{4,}|(?:\.\s){4,}|_{5,}|-{5,})\s*\d{1,4}\b")
-_COMMA_PAGE_NUM_RE = re.compile(r",\s*\d{1,4}(?:[-–]\d{1,4})?(?=[,\s.;\]]|$)")
-_PAGE_TOKEN_RE = re.compile(r"^\d{1,4}(?:[-–]\d{1,4})?[,.;\]]?$")
-_AUTHOR_INITIAL_RE = re.compile(r"\b[A-Z]\.(?:\s*[A-Z]\.)?")
-_YEAR_PAREN_RE = re.compile(r"\(\s*(?:19|20)\d{2}[a-z]?\s*\)")
-
-
-def is_low_value_rag_chunk(text: str, section_title: str = "") -> bool:
-    """Nhận diện các đoạn rác học thuật (Index cuối sách, References/Bibliography, Mục lục .....) để loại khỏi RAG."""
-    if not text or not text.strip():
-        return True
-
-    cleaned = text.strip()
-    # Bóc phần breadcrumb [Chapter ...] ở đầu đoạn nếu có để đánh giá phần thân thực tế
-    body = cleaned
-    if cleaned.startswith("["):
-        first_nl = cleaned.find("]\n")
-        if first_nl != -1:
-            if not section_title:
-                section_title = cleaned[1:first_nl].strip()
-            body = cleaned[first_nl + 2 :].strip()
-
-    if not body:
-        return True
-
-    # 1. Tiêu đề mục rõ ràng là Index / References / Mục lục
-    leaf_title = section_title.split(">")[-1].strip() if section_title else ""
-    if leaf_title and _LOW_VALUE_SECTION_RE.match(leaf_title):
-        return True
-
-    # 2. Mục lục (Table of Contents): nhiều dòng chứa dấu chấm dẫn tới số trang
-    if len(_TOC_DOT_LEADER_RE.findall(body)) >= 2:
-        return True
-
-    tokens = body.split()
-    total_tokens = len(tokens)
-    if total_tokens < 6:
-        return False
-
-    # 3. Author / Subject Index cuối sách: dày đặc số trang sau dấu phẩy (VD: "Sommerville, I., 91, 105, 110...")
-    comma_page_hits = len(_COMMA_PAGE_NUM_RE.findall(body))
-    page_num_tokens = sum(1 for tok in tokens if _PAGE_TOKEN_RE.match(tok))
-    author_initial_hits = len(_AUTHOR_INITIAL_RE.findall(body))
-
-    if comma_page_hits >= 7 and page_num_tokens >= 9 and (page_num_tokens / total_tokens) >= 0.14:
-        return True
-    if page_num_tokens >= 14 and author_initial_hits >= 4 and (page_num_tokens / total_tokens) >= 0.2:
-        return True
-
-    # 4. References / Bibliography: dày đặc năm xuất bản trong ngoặc + tên tác giả viết tắt
-    year_hits = len(_YEAR_PAREN_RE.findall(body))
-    if year_hits >= 3 and author_initial_hits >= 4:
-        return True
-
-    return False
 _DANGLING_END_RE = re.compile(
     r"\b(?:of|to|for|with|in|on|at|by|from|and|or|the|a|an|is|are|was|were|that|which|của|và|hoặc|tại|trong|với|cho|là)\s*$",
     re.IGNORECASE,
@@ -139,9 +88,7 @@ def get_clean_overlap(text: str, max_chars: int = 100) -> str:
 def _detect_heading_level(line: str) -> Optional[int]:
     """Xác định cấp tiêu đề (1..4) tổng quát cho mọi loại tài liệu, trả về None nếu là dòng thường."""
     s = line.strip()
-    if not s or len(s) > 120 or len(s) < 3:
-        return None
-    if s.startswith("|") or s.endswith(("?", ";", ",")):
+    if not is_plausible_heading_line(s):
         return None
 
     m_md = re.match(r"^(#{1,4})\s+(.+)$", s)
@@ -172,8 +119,7 @@ def _detect_heading_level(line: str) -> Optional[int]:
         ):
             return 2
 
-    letters = [c for c in s if c.isalpha()]
-    if len(letters) >= 4 and len(s) <= 85 and s.isupper() and not s.endswith("."):
+    if is_allowed_uppercase_heading(s):
         return 1
 
     return None
@@ -583,7 +529,11 @@ def chunk_text_semantic(
 
         if len(reflowed_body) <= effective_max:
             final_text = f"{prefix}{reflowed_body}".strip()
-            if len(reflowed_body) >= 50 and not reflowed_body.isdigit():
+            if (
+                len(reflowed_body) >= 50
+                and not reflowed_body.isdigit()
+                and not is_low_value_rag_chunk(final_text, section_title)
+            ):
                 chunks.append(
                     {
                         "id": f"{norm_course}::{source_name}_chunk_{chunk_index}",
@@ -696,22 +646,24 @@ def chunk_text(
     """Điều phối chia văn bản theo chiến lược được chọn: recursive (mặc định), semantic, hoặc legacy."""
     norm_strategy = normalize_chunking_strategy(strategy)
     if norm_strategy == "legacy":
-        return chunk_text_legacy(
+        raw_chunks = chunk_text_legacy(
             text=text,
             source_name=source_name,
             course_id=course_id,
             chunk_size=chunk_size,
             overlap=overlap,
         )
-    if norm_strategy == "semantic":
-        return chunk_text_semantic(
+    elif norm_strategy == "semantic":
+        raw_chunks = chunk_text_semantic(
             text=text,
             source_name=source_name,
             course_id=course_id,
             embedding_provider=embedding_provider,
         )
-    return chunk_text_recursive(
-        text=text,
-        source_name=source_name,
-        course_id=course_id,
-    )
+    else:
+        raw_chunks = chunk_text_recursive(
+            text=text,
+            source_name=source_name,
+            course_id=course_id,
+        )
+    return _apply_chunk_context_smoothing(raw_chunks)

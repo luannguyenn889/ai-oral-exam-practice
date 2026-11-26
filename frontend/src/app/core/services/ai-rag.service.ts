@@ -44,6 +44,7 @@ interface RawRagStatus {
   files: string[];
   embedding_provider?: 'local' | 'e5-small' | 'gemini';
   embedding_model: string;
+  reranker_provider?: 'minilm' | 'bge-m3';
   reranker_model: string;
   chunking_strategy?: string;
   hybrid_bm25_active: boolean;
@@ -96,6 +97,7 @@ export interface SttPipelineResult {
 
 export type EmbeddingProviderOption = 'local' | 'e5-small' | 'gemini';
 export type ChunkingStrategyOption = 'recursive' | 'semantic' | 'legacy';
+export type RerankerProviderOption = 'minilm' | 'bge-m3';
 
 export interface RagIndexJobStatus {
   jobId: string;
@@ -186,6 +188,7 @@ export class AiRagService {
           files: res.files || [],
           embeddingProvider: res.embedding_provider,
           embeddingModel: res.embedding_model,
+          rerankerProvider: res.reranker_provider,
           rerankerModel: res.reranker_model,
           chunkingStrategy: res.chunking_strategy,
           hybridBm25Active: res.hybrid_bm25_active,
@@ -201,12 +204,15 @@ export class AiRagService {
     config: {
       embeddingProvider?: EmbeddingProviderOption;
       chunkingStrategy?: ChunkingStrategyOption;
+      rerankerProvider?: RerankerProviderOption;
     },
   ): Observable<{
     courseId: string;
     embeddingProvider: EmbeddingProviderOption;
     chunkingStrategy: ChunkingStrategyOption;
     embeddingModel: string;
+    rerankerProvider: RerankerProviderOption;
+    rerankerModel: string;
   }> {
     return this.http
       .put<{
@@ -214,9 +220,12 @@ export class AiRagService {
         embedding_provider: EmbeddingProviderOption;
         chunking_strategy: ChunkingStrategyOption;
         embedding_model: string;
+        reranker_provider: RerankerProviderOption;
+        reranker_model: string;
       }>(`${this.aiUrl}/ai/rag/courses/${encodeURIComponent(courseId)}/config`, {
         ...(config.embeddingProvider ? { embedding_provider: config.embeddingProvider } : {}),
         ...(config.chunkingStrategy ? { chunking_strategy: config.chunkingStrategy } : {}),
+        ...(config.rerankerProvider ? { reranker_provider: config.rerankerProvider } : {}),
       })
       .pipe(
         map((res) => ({
@@ -224,6 +233,8 @@ export class AiRagService {
           embeddingProvider: res.embedding_provider,
           chunkingStrategy: res.chunking_strategy,
           embeddingModel: res.embedding_model,
+          rerankerProvider: res.reranker_provider,
+          rerankerModel: res.reranker_model,
         })),
       );
   }
@@ -575,6 +586,7 @@ export class AiRagService {
     includeRubric?: boolean;
     selectedChunkIds?: string[];
     embeddingProvider?: EmbeddingProviderOption;
+    rerankerProvider?: RerankerProviderOption;
   }): Observable<RagSuggestAnswerResponse> {
     return this.http
       .post<{
@@ -589,6 +601,8 @@ export class AiRagService {
         used_chunk_ids: string[];
         embedding_provider?: string;
         embedding_model?: string;
+        reranker_provider?: string;
+        reranker_model?: string;
         llm_model: string;
         status: 'ai_draft';
         notice: string;
@@ -604,6 +618,7 @@ export class AiRagService {
           ? { selected_chunk_ids: params.selectedChunkIds }
           : {}),
         ...(params.embeddingProvider ? { embedding_provider: params.embeddingProvider } : {}),
+        ...(params.rerankerProvider ? { reranker_provider: params.rerankerProvider } : {}),
       })
       .pipe(
         map((res) => ({
@@ -632,6 +647,8 @@ export class AiRagService {
           usedChunkIds: res.used_chunk_ids || [],
           embeddingProvider: res.embedding_provider,
           embeddingModel: res.embedding_model,
+          rerankerProvider: res.reranker_provider,
+          rerankerModel: res.reranker_model,
           llmModel: res.llm_model,
           status: res.status || 'ai_draft',
           notice: res.notice || '',

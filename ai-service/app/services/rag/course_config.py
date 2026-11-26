@@ -16,7 +16,11 @@ from typing import Any, Optional
 
 from app.config import settings
 from app.services.rag.chunking import DEFAULT_CHUNKING_STRATEGY, normalize_chunking_strategy
-from app.services.rag.embeddings import normalize_course_id, normalize_embedding_provider
+from app.services.rag.embeddings import (
+    normalize_course_id,
+    normalize_embedding_provider,
+    normalize_reranker_provider,
+)
 
 _config_lock = threading.Lock()
 
@@ -50,6 +54,7 @@ def get_course_rag_config(course_id: str) -> dict[str, str]:
     norm_course = normalize_course_id(course_id).upper()
     default_provider = normalize_embedding_provider(None)
     default_strategy = DEFAULT_CHUNKING_STRATEGY
+    default_reranker = normalize_reranker_provider(None)
 
     with _config_lock:
         all_cfg = _load_all_locked()
@@ -65,10 +70,16 @@ def get_course_rag_config(course_id: str) -> dict[str, str]:
         if entry.get("chunking_strategy")
         else default_strategy
     )
+    reranker = (
+        normalize_reranker_provider(entry.get("reranker_provider"))
+        if entry.get("reranker_provider")
+        else default_reranker
+    )
     return {
         "course_id": norm_course,
         "embedding_provider": provider,
         "chunking_strategy": strategy,
+        "reranker_provider": reranker,
     }
 
 
@@ -76,8 +87,9 @@ def set_course_rag_config(
     course_id: str,
     embedding_provider: Optional[str] = None,
     chunking_strategy: Optional[str] = None,
+    reranker_provider: Optional[str] = None,
 ) -> dict[str, str]:
-    """Lưu cập nhật cấu hình embedding_provider và/hoặc chunking_strategy cho học phần."""
+    """Lưu cập nhật cấu hình embedding_provider, chunking_strategy và/hoặc reranker_provider cho học phần."""
     norm_course = normalize_course_id(course_id).upper()
     with _config_lock:
         all_cfg = _load_all_locked()
@@ -94,9 +106,15 @@ def set_course_rag_config(
                 current.get("chunking_strategy") or DEFAULT_CHUNKING_STRATEGY
             )
         )
+        resolved_reranker = (
+            normalize_reranker_provider(reranker_provider)
+            if isinstance(reranker_provider, str) and reranker_provider.strip()
+            else normalize_reranker_provider(current.get("reranker_provider"))
+        )
         all_cfg[norm_course] = {
             "embedding_provider": resolved_provider,
             "chunking_strategy": resolved_strategy,
+            "reranker_provider": resolved_reranker,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         _save_all_locked(all_cfg)
@@ -105,6 +123,7 @@ def set_course_rag_config(
         "course_id": norm_course,
         "embedding_provider": resolved_provider,
         "chunking_strategy": resolved_strategy,
+        "reranker_provider": resolved_reranker,
     }
 
 
@@ -126,6 +145,16 @@ def resolve_course_chunking_strategy(
     if isinstance(explicit_strategy, str) and explicit_strategy.strip():
         return normalize_chunking_strategy(explicit_strategy)
     return get_course_rag_config(course_id)["chunking_strategy"]
+
+
+def resolve_course_reranker_provider(
+    course_id: str,
+    explicit_provider: Optional[str] = None,
+) -> str:
+    """Ưu tiên reranker_provider truyền trực tiếp; nếu không có thì lấy theo cấu hình đã lưu của học phần."""
+    if isinstance(explicit_provider, str) and explicit_provider.strip():
+        return normalize_reranker_provider(explicit_provider)
+    return get_course_rag_config(course_id)["reranker_provider"]
 
 
 def rename_course_rag_config(old_code: str, new_code: str) -> None:

@@ -129,8 +129,9 @@ def run_with_gemini_client(
             with _lock:
                 _cooldown_until[key] = time.monotonic() + cooldown
             masked = f"...{key[-6:]}" if len(key) > 6 else "***"
+            detail = " ".join(str(exc).split())[:140]
             print(
-                f"[AI-SERVICE] Gemini key {masked} gap loi ({type(exc).__name__}), chuyen sang key du phong tiep theo.",
+                f"[AI-SERVICE] Gemini key {masked} gap loi ({type(exc).__name__}: {detail}), chuyen sang key du phong tiep theo.",
                 flush=True,
             )
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 
 ChunkingStrategy = Literal["recursive", "semantic", "legacy"]
+RerankerProvider = Literal["minilm", "bge-m3"]
 
 
 class RagIndexRequest(BaseModel):
@@ -71,6 +72,9 @@ class RagSearchRequest(BaseModel):
     embedding_provider: Optional[Literal["local", "e5-small", "gemini"]] = Field(
         default=None, description="Ghi đè embedding provider ('local', 'e5-small', hoặc 'gemini')"
     )
+    reranker_provider: Optional[RerankerProvider] = Field(
+        default=None, description="Ghi đè reranker ('minilm' hoặc 'bge-m3')"
+    )
 
 
 class RagChunkResult(BaseModel):
@@ -105,6 +109,7 @@ class RagStatusResponse(BaseModel):
     files: list[str]
     embedding_provider: str = "local"
     embedding_model: str
+    reranker_provider: str = "minilm"
     reranker_model: str
     chunking_strategy: str = "recursive"
     hybrid_bm25_active: bool
@@ -121,6 +126,9 @@ class CourseRagConfigUpdateRequest(BaseModel):
     chunking_strategy: Optional[ChunkingStrategy] = Field(
         default=None, description="Chiến lược chia đoạn mặc định áp dụng cho học phần"
     )
+    reranker_provider: Optional[RerankerProvider] = Field(
+        default=None, description="Mô hình Cross-Encoder Rerank mặc định ('minilm' hoặc 'bge-m3')"
+    )
 
 
 class CourseRagConfigResponse(BaseModel):
@@ -128,6 +136,8 @@ class CourseRagConfigResponse(BaseModel):
     embedding_provider: str
     chunking_strategy: str
     embedding_model: str
+    reranker_provider: str = "minilm"
+    reranker_model: str = ""
 
 
 class SuggestedRubricCriterion(BaseModel):
@@ -159,6 +169,10 @@ class RagSuggestAnswerRequest(BaseModel):
         default=None,
         description="Ghi đè embedding provider; mặc định tự động lấy theo cấu hình đã lưu của học phần",
     )
+    reranker_provider: Optional[RerankerProvider] = Field(
+        default=None,
+        description="Ghi đè mô hình rerank ('minilm' hoặc 'bge-m3'); mặc định lấy theo cấu hình học phần",
+    )
     llm_model: Optional[str] = Field(
         default=None, description="Ghi đè mô hình LLM (hỗ trợ 'mock' khi kiểm thử)"
     )
@@ -172,6 +186,8 @@ class RagSuggestAnswerResponse(BaseModel):
     used_chunk_ids: list[str] = Field(default_factory=list)
     embedding_provider: str = "local"
     embedding_model: str = ""
+    reranker_provider: str = "minilm"
+    reranker_model: str = ""
     llm_model: str
     status: Literal["ai_draft"] = "ai_draft"
     notice: str

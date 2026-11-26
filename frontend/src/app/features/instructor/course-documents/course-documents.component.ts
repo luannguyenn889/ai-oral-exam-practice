@@ -7,6 +7,7 @@ import {
   AiRagService,
   ChunkingStrategyOption,
   EmbeddingProviderOption,
+  RerankerProviderOption,
 } from '../../../core/services/ai-rag.service';
 import { PracticeApi } from '../../../data-access/api/practice.api';
 import { ToastService } from '../../../core/services/toast.service';
@@ -83,6 +84,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   // Test Search state
   embeddingProvider: EmbeddingProviderOption = 'local';
   chunkingStrategy: ChunkingStrategyOption = 'recursive';
+  rerankerProvider: RerankerProviderOption = 'minilm';
   searchQuery = 'Dạ thưa thầy...';
   searchMode: 'hybrid' | 'dense' | 'bm25' = 'hybrid';
   topK = 3;
@@ -171,7 +173,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   }
 
   onEmbeddingProviderChange(): void {
-    if (this.isUploadingLocal) return;
+    if (this.isUploadingLocal || this.isSyncing) return;
     this.searchResults = [];
     this.cleanedQuery = '';
     if (this.ragCourseCode) {
@@ -194,7 +196,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   }
 
   onChunkingStrategyChange(): void {
-    if (this.isUploadingLocal) return;
+    if (this.isUploadingLocal || this.isSyncing) return;
     const labels: Record<ChunkingStrategyOption, string> = {
       recursive: 'Recursive theo tiêu đề & câu (Mặc định)',
       semantic: 'Semantic theo ngữ nghĩa (Embedding)',
@@ -208,6 +210,23 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
     this.toast.info(
       `Đã chọn chiến lược cắt đoạn: ${labels[this.chunkingStrategy]}. Bấm "Đồng bộ chỉ mục Server" nếu muốn lập chỉ mục lại các file hiện có.`,
     );
+  }
+
+  onRerankerProviderChange(): void {
+    if (this.isUploadingLocal || this.isSyncing) return;
+    if (this.ragCourseCode) {
+      this.aiRagService
+        .updateCourseRagConfig(this.ragCourseCode, { rerankerProvider: this.rerankerProvider })
+        .subscribe({
+          next: (cfg) => {
+            this.toast.info(
+              `Đã áp dụng mô hình Rerank "${cfg.rerankerModel}" cho học phần ${this.ragCourseCode} (có hiệu lực ngay khi truy vấn & soạn câu hỏi).`,
+            );
+            this.loadRagStatus(true, false);
+          },
+          error: () => this.loadRagStatus(true, false),
+        });
+    }
   }
 
   loadRagStatus(silent = false, syncSavedSelection = false): void {
@@ -234,6 +253,9 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
             status.chunkingStrategy === 'legacy'
           ) {
             this.chunkingStrategy = status.chunkingStrategy;
+          }
+          if (status.rerankerProvider === 'minilm' || status.rerankerProvider === 'bge-m3') {
+            this.rerankerProvider = status.rerankerProvider;
           }
         }
         this.loading = false;

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -16,7 +16,7 @@ import { cleanHtmlToPlainText } from '../../../shared/utils/text.util';
   templateUrl: './question-editor.component.html',
   styleUrl: './question-editor.component.css',
 })
-export class QuestionEditorComponent implements OnInit {
+export class QuestionEditorComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private practiceApi = inject(PracticeApi);
@@ -42,10 +42,13 @@ export class QuestionEditorComponent implements OnInit {
 
   // Human-in-the-loop (AI khởi tạo từ RAG -> Giảng viên chọn lọc, chỉnh sửa & duyệt)
   isSuggestingAnswer = false;
+  aiElapsedSeconds = 0;
+  private aiTimerId: ReturnType<typeof setInterval> | null = null;
   ragReferences: RagChunkResult[] = [];
   selectedRagChunkIds = new Set<string>();
   ragSuggestModel = '';
   ragSuggestEmbeddingModel = '';
+  ragSuggestRerankerModel = '';
   ragSuggestNotice = '';
   answerReviewStatus: 'manual' | 'ai_draft' | 'approved' = 'manual';
   approvedAt = '';
@@ -57,6 +60,38 @@ export class QuestionEditorComponent implements OnInit {
 
   get selectedRagCount(): number {
     return this.ragReferences.filter((r) => this.selectedRagChunkIds.has(r.chunkId)).length;
+  }
+
+  get aiRunningStepText(): string {
+    if (this.aiElapsedSeconds < 3) {
+      return 'Đang truy xuất Hybrid RAG & chấm lại Cross-Encoder Rerank...';
+    }
+    return 'AI đang tổng hợp Đáp án mẫu chuẩn từ các đoạn giáo trình...';
+  }
+
+  formatAiElapsed(): string {
+    const mins = Math.floor(this.aiElapsedSeconds / 60);
+    const secs = this.aiElapsedSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  private startAiTimer(): void {
+    this.stopAiTimer();
+    this.aiElapsedSeconds = 0;
+    this.aiTimerId = setInterval(() => {
+      this.aiElapsedSeconds += 1;
+    }, 1000);
+  }
+
+  private stopAiTimer(): void {
+    if (this.aiTimerId !== null) {
+      clearInterval(this.aiTimerId);
+      this.aiTimerId = null;
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.stopAiTimer();
   }
 
   ngOnInit(): void {
@@ -133,6 +168,7 @@ export class QuestionEditorComponent implements OnInit {
     }
 
     this.isSuggestingAnswer = true;
+    this.startAiTimer();
     this.aiRagService
       .suggestReferenceAnswer({
         courseId: this.selectedCourseCode,
@@ -148,6 +184,7 @@ export class QuestionEditorComponent implements OnInit {
       .subscribe({
         next: (res) => {
           this.isSuggestingAnswer = false;
+          this.stopAiTimer();
           this.sampleAnswer = cleanHtmlToPlainText(res.sampleAnswer);
           this.ragReferences = res.ragReferences || [];
           this.selectedRagChunkIds = new Set(
@@ -157,6 +194,7 @@ export class QuestionEditorComponent implements OnInit {
           );
           this.ragSuggestModel = res.llmModel;
           this.ragSuggestEmbeddingModel = res.embeddingModel || '';
+          this.ragSuggestRerankerModel = res.rerankerModel || '';
           this.ragSuggestNotice = res.notice;
           this.answerReviewStatus = 'ai_draft';
           this.approvedAt = '';
@@ -168,6 +206,7 @@ export class QuestionEditorComponent implements OnInit {
         },
         error: () => {
           this.isSuggestingAnswer = false;
+          this.stopAiTimer();
           this.toastService.error(
             'Không thể kết nối AI Service để gợi ý đáp án. Hãy kiểm tra AI Service đang chạy.',
           );

@@ -174,6 +174,7 @@ export interface RagStatus {
   files: string[];
   embeddingProvider?: 'local' | 'e5-small' | 'gemini';
   embeddingModel: string;
+  rerankerProvider?: 'minilm' | 'bge-m3';
   rerankerModel: string;
   chunkingStrategy?: string;
   hybridBm25Active: boolean;
@@ -220,6 +221,8 @@ export interface RagSuggestAnswerResponse {
   usedChunkIds: string[];
   embeddingProvider?: string;
   embeddingModel?: string;
+  rerankerProvider?: string;
+  rerankerModel?: string;
   llmModel: string;
   status: 'ai_draft';
   notice: string;

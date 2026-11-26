@@ -16,6 +16,7 @@ import importlib.util
 import os
 import re
 import threading
+import time
 import warnings
 from typing import Any, Callable, Optional
 
@@ -28,10 +29,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ.setdefault("OMP_NUM_THREADS", str(max(1, os.cpu_count() or 4)))
 
 EMBEDDING_PROVIDERS = ("local", "e5-small", "gemini")
+RERANKER_PROVIDERS = ("minilm", "bge-m3")
 
 _embedding_models: dict[str, Any] = {}
 _embedding_lock = threading.Lock()
-_reranker_model: Any = None
+_reranker_models: dict[str, Any] = {}
+_reranker_lock = threading.Lock()
 
 FILLER_PATTERNS = [
     r"\bdạ\b",
@@ -70,6 +73,21 @@ def get_active_embedding_name(provider: Optional[str] = None) -> str:
     if prov == "e5-small":
         return settings.e5_embedding_model_name
     return settings.embedding_model_name
+
+
+def normalize_reranker_provider(provider: Optional[str] = None) -> str:
+    raw = provider if isinstance(provider, str) else None
+    prov = (raw or settings.reranker_provider or "minilm").strip().lower()
+    if prov in ("bge-m3", "bge", "bge_m3", "baai/bge-reranker-v2-m3", "bge-reranker-v2-m3"):
+        return "bge-m3"
+    return "minilm"
+
+
+def get_active_reranker_name(provider: Optional[str] = None) -> str:
+    prov = normalize_reranker_provider(provider)
+    if prov == "bge-m3":
+        return settings.bge_reranker_model_name
+    return settings.reranker_model_name
 
 
 def clean_oral_query(text: str) -> str:
@@ -208,7 +226,7 @@ def embed_texts(
     from google.genai import types
 
     prefix = "task: search result | query: " if task == "query" else "title: none | text: "
-    batch_size = min(100, max(1, int(settings.gemini_embedding_batch_size or 100)))
+    batch_size = min(100, max(1, int(settings.gemini_embedding_batch_size or 50)))
     batches = [texts[start : start + batch_size] for start in range(0, total_texts, batch_size)]
 
     def _embed_batch(batch_texts: list[str]) -> list[list[float]]:
@@ -216,17 +234,37 @@ def embed_texts(
             types.Content(parts=[types.Part.from_text(text=f"{prefix}{text}")])
             for text in batch_texts
         ]
-        response = run_with_gemini_client(
-            lambda client: client.models.embed_content(
-                model=settings.gemini_embedding_model_name,
-                contents=contents,
-                config=types.EmbedContentConfig(
-                    output_dimensionality=settings.gemini_embedding_dimensions
-                ),
-            ),
-            missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env để dùng Gemini Embedding.",
-        )
-        return [list(embedding.values) for embedding in (response.embeddings or [])]
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                response = run_with_gemini_client(
+                    lambda client: client.models.embed_content(
+                        model=settings.gemini_embedding_model_name,
+                        contents=contents,
+                        config=types.EmbedContentConfig(
+                            output_dimensionality=settings.gemini_embedding_dimensions
+                        ),
+                    ),
+                    missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env để dùng Gemini Embedding.",
+                )
+                if len(batches) > 1:
+                    time.sleep(0.25)
+                return [list(embedding.values) for embedding in (response.embeddings or [])]
+            except Exception as exc:
+                msg = str(exc).lower()
+                is_rate_limit = any(
+                    tok in msg
+                    for tok in ("429", "resource_exhausted", "rate limit", "too many requests", "503")
+                )
+                if not is_rate_limit or attempt >= max_retries:
+                    raise
+                wait_sec = 15 * (attempt + 1)
+                print(
+                    f"[AI-SERVICE] Gemini Embedding cham han muc tam thoi, cho {wait_sec}s roi thu lai ({attempt + 1}/{max_retries})...",
+                    flush=True,
+                )
+                time.sleep(wait_sec)
+        raise RuntimeError("Không thể tạo vector Gemini Embedding sau nhiều lần thử lại.")
 
     vectors = []
     done_count = 0
@@ -253,19 +291,46 @@ def embed_texts(
     return vectors
 
 
-def get_reranker_model() -> Any:
-    """Tải Cross-Encoder Reranker model để tái xếp hạng Top-K ứng viên."""
-    global _reranker_model
-    if _reranker_model is None:
-        try:
-            from sentence_transformers import CrossEncoder
+def get_reranker_model(
+    model_name: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> Any:
+    """Tải Cross-Encoder Reranker model (MiniLM hoặc BAAI/bge-reranker-v2-m3) để tái xếp hạng Top-K ứng viên."""
+    target_name = (model_name or get_active_reranker_name(provider)).strip()
+    if target_name in _reranker_models:
+        return _reranker_models[target_name]
 
+    with _reranker_lock:
+        if target_name not in _reranker_models:
             try:
-                _reranker_model = CrossEncoder(
-                    settings.reranker_model_name, local_files_only=True
+                from sentence_transformers import CrossEncoder
+
+                device = "cpu"
+                kwargs: dict[str, Any] = {}
+                try:
+                    import torch
+
+                    if torch.cuda.is_available():
+                        device = "cuda"
+                        kwargs["model_kwargs"] = {"torch_dtype": torch.float16}
+                except Exception:
+                    device = "cpu"
+                kwargs["device"] = device
+
+                try:
+                    loaded = CrossEncoder(target_name, local_files_only=True, **kwargs)
+                except Exception:
+                    loaded = CrossEncoder(target_name, **kwargs)
+
+                _reranker_models[target_name] = loaded
+                print(
+                    f"[AI-SERVICE] Reranker model '{target_name}' ready (device={device}).",
+                    flush=True,
                 )
-            except Exception:
-                _reranker_model = CrossEncoder(settings.reranker_model_name)
-        except Exception:
-            _reranker_model = None
-    return _reranker_model
+            except Exception as exc:
+                print(
+                    f"[AI-SERVICE] Khong nap duoc Reranker '{target_name}' ({exc}), fallback ve RRF.",
+                    flush=True,
+                )
+                return None
+    return _reranker_models.get(target_name)
