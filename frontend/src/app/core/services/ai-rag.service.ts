@@ -102,7 +102,7 @@ export type RerankerProviderOption = 'minilm' | 'bge-m3';
 export interface RagIndexJobStatus {
   jobId: string;
   courseId: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   phase: string;
   percent: number;
   message: string;
@@ -130,7 +130,7 @@ export interface RagIndexJobStatus {
 interface RawRagIndexJob {
   job_id: string;
   course_id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   phase: string;
   percent: number;
   message: string;
@@ -324,6 +324,15 @@ export class AiRagService {
   getIndexJobStatus(jobId: string): Observable<RagIndexJobStatus> {
     return this.http
       .get<RawRagIndexJob>(`${this.aiUrl}/ai/rag/index/jobs/${encodeURIComponent(jobId)}`)
+      .pipe(map((res) => this.mapIndexJob(res)));
+  }
+
+  cancelIndexJob(jobId: string): Observable<RagIndexJobStatus> {
+    return this.http
+      .post<RawRagIndexJob>(
+        `${this.aiUrl}/ai/rag/index/jobs/${encodeURIComponent(jobId)}/cancel`,
+        {},
+      )
       .pipe(map((res) => this.mapIndexJob(res)));
   }
 

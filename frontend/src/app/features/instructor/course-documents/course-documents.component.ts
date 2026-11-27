@@ -55,6 +55,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   error: string | null = null;
   ragStatus: RagStatus | null = null;
   isSyncing = false;
+  isCancellingSync = false;
   syncElapsedSeconds = 0;
   private syncTimerId: ReturnType<typeof setInterval> | null = null;
   activeSyncJobId: string | null = null;
@@ -421,6 +422,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
       if (
         !lowerName.endsWith('.pdf') &&
         !lowerName.endsWith('.docx') &&
+        !lowerName.endsWith('.pptx') &&
         !lowerName.endsWith('.txt')
       ) {
         invalidCount++;
@@ -443,7 +445,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
 
     if (invalidCount > 0) {
       this.toast.warning(
-        `Có ${invalidCount} tệp không đúng định dạng (.pdf, .docx, .txt) đã được bỏ qua.`,
+        `Có ${invalidCount} tệp không đúng định dạng (.pdf, .docx, .pptx, .txt) đã được bỏ qua.`,
       );
     }
     if (addedCount > 0) {
@@ -714,16 +716,28 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
             this.stopPollingSyncJob();
             this.stopSyncTimer();
             this.isSyncing = false;
+            this.isCancellingSync = false;
+            this.activeSyncJobId = null;
             const totalChunks = job.result?.totalChunks ?? job.totalChunks;
             const totalFiles = job.result?.totalFiles ?? job.totalFiles;
             this.toast.success(
               `Đã đồng bộ chỉ mục RAG (${totalChunks} đoạn từ ${totalFiles} tài liệu, chế độ: ${job.result?.chunkingStrategy || job.chunkingStrategy}).`,
             );
             this.loadRagStatus(true);
+          } else if (job.status === 'cancelled') {
+            this.stopPollingSyncJob();
+            this.stopSyncTimer();
+            this.isSyncing = false;
+            this.isCancellingSync = false;
+            this.activeSyncJobId = null;
+            this.toast.info('Đã hủy quá trình đồng bộ chỉ mục RAG.');
+            this.loadRagStatus(true);
           } else if (job.status === 'failed') {
             this.stopPollingSyncJob();
             this.stopSyncTimer();
             this.isSyncing = false;
+            this.isCancellingSync = false;
+            this.activeSyncJobId = null;
             this.toast.error(job.error || 'Lỗi khi đồng bộ chỉ mục RAG tại Server.');
           }
         },
@@ -732,10 +746,38 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
             this.stopPollingSyncJob();
             this.stopSyncTimer();
             this.isSyncing = false;
+            this.isCancellingSync = false;
+            this.activeSyncJobId = null;
           }
         },
       });
     }, 1500);
+  }
+
+  cancelSyncJob(): void {
+    if (!this.activeSyncJobId || this.isCancellingSync) return;
+    this.isCancellingSync = true;
+    this.syncMessage = 'Đang gửi yêu cầu hủy tác vụ lập chỉ mục...';
+    this.aiRagService.cancelIndexJob(this.activeSyncJobId).subscribe({
+      next: (job) => {
+        this.applySyncJobSnapshot(job);
+        if (job.status === 'cancelled' || job.status === 'completed' || job.status === 'failed') {
+          this.stopPollingSyncJob();
+          this.stopSyncTimer();
+          this.isSyncing = false;
+          this.isCancellingSync = false;
+          this.activeSyncJobId = null;
+          if (job.status === 'cancelled') {
+            this.toast.info('Đã hủy quá trình đồng bộ chỉ mục RAG.');
+          }
+          this.loadRagStatus(true);
+        }
+      },
+      error: () => {
+        this.isCancellingSync = false;
+        this.toast.error('Không thể gửi yêu cầu hủy tác vụ lúc này.');
+      },
+    });
   }
 
   checkActiveSyncJob(): void {
@@ -758,6 +800,7 @@ export class CourseDocumentsComponent implements OnInit, OnDestroy {
   syncRagIndex(forceReindex = false): void {
     if (this.isSyncing) return;
     this.isSyncing = true;
+    this.isCancellingSync = false;
     this.syncPercent = 1;
     this.syncMessage = 'Đang khởi chạy tác vụ đồng bộ nền tại AI Service...';
     this.syncCurrentFile = '';

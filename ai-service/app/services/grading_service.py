@@ -219,9 +219,8 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
     rag_refs: list[RagReference] = []
 
     if request.rag_config.enabled:
-        combined_query = f"{request.question}\n{request.transcript}"
         rag_chunks = rag_service.query_relevant_chunks(
-            query_text=combined_query,
+            query_text=request.question,
             course_id=request.course_id,
             top_k=request.rag_config.top_k,
             score_threshold=request.rag_config.score_threshold,
@@ -229,6 +228,8 @@ def evaluate_oral_answer(request: EvaluationRequest) -> EvaluationResponse:
             use_rerank=request.rag_config.use_rerank,
             embedding_provider=effective_provider,
             reranker_provider=effective_reranker,
+            secondary_query=request.transcript,
+            expand_neighbors=request.rag_config.expand_neighbors,
         )
         rag_context_str = rag_service.format_rag_context(rag_chunks)
         for chunk in rag_chunks:

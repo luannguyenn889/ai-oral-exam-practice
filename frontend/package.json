@@ -7,8 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "cy:open": "cypress open",
-    "cy:run": "cypress run"
+    "cy:open": "cypress open --e2e",
+    "cy:run": "cypress run --browser chrome"
   },
   "prettier": {
     "printWidth": 100,

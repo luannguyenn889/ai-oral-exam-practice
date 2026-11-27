@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     default_stt_provider: str = "groq"
     default_llm_model: str = "gemini-2.5-flash"
-    embedding_provider: str = "local"
+    embedding_provider: str = "e5-small"
     embedding_backend: str = "auto"  # "auto" (onnx tren CPU / cuda FP16 tren GPU), "onnx", hoac "torch"
     embedding_batch_size: int = 64
     embedding_model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -36,9 +36,17 @@ class Settings(BaseSettings):
     gemini_embedding_dimensions: int = 768
     gemini_embedding_batch_size: int = 50
     gemini_embedding_max_workers: int = 2
-    reranker_provider: str = "minilm"
+    reranker_provider: str = "bge-m3"
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     bge_reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
+    warmup_reranker: bool = True
+    max_upload_size_mb: int = 50
+    rag_min_relevance_enabled: bool = True
+    rag_min_rerank_score: float = 0.03
+    rag_min_minilm_rerank_score: float = -4.5
+    rag_min_dense_sim_local: float = 0.35
+    rag_min_dense_sim_e5: float = 0.76
+    rag_min_dense_sim_gemini: float = 0.52
     ollama_base_url: str = "http://localhost:11434"
 
     data_dir: str = "data"

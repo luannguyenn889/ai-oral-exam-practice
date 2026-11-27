@@ -121,7 +121,13 @@ def suggest_reference_answer(
     active_reranker_model = get_active_reranker_name(effective_reranker)
     query_parts = [p.strip() for p in [topic or "", question] if p and p.strip()]
     search_query = " — ".join(query_parts) if query_parts else question
+    secondary_ref_query = (
+        reference_answer.strip()[:260]
+        if isinstance(reference_answer, str) and reference_answer.strip()
+        else None
+    )
 
+    warnings: list[str] = []
     # 1. Truy xuất các đoạn giáo trình liên quan bằng Hybrid RAG theo đúng embedding & reranker của học phần
     try:
         retrieved_chunks = query_relevant_chunks(
@@ -132,9 +138,14 @@ def suggest_reference_answer(
             use_rerank=True,
             embedding_provider=effective_provider,
             reranker_provider=effective_reranker,
+            secondary_query=secondary_ref_query,
+            expand_neighbors=True,
         )
-    except Exception:
+    except Exception as exc:
         retrieved_chunks = []
+        warn_msg = f"Không truy xuất được giáo trình RAG ({exc}); AI chuyển sang biên soạn không có ngữ cảnh giáo trình."
+        warnings.append(warn_msg)
+        print(f"[AI-SERVICE] {warn_msg}", flush=True)
 
     # 2. Lọc theo lựa chọn của giảng viên (Human-in-the-loop: bỏ các đoạn RAG nhiễu)
     if selected_chunk_ids is not None:
@@ -168,6 +179,7 @@ def suggest_reference_answer(
             "llm_model": "mock-fallback" if target_model.lower() != "mock" else "mock",
             "status": "ai_draft",
             "notice": HITL_NOTICE,
+            "warnings": warnings,
         }
 
     # 3. Gọi Gemini Structured Output sinh bản nháp Đáp án mẫu (+ Rubric nếu bật)
@@ -276,9 +288,11 @@ def suggest_reference_answer(
             "llm_model": target_model,
             "status": "ai_draft",
             "notice": HITL_NOTICE,
+            "warnings": warnings,
         }
     except Exception as exc:
         print(f"[AI-SERVICE] Loi suggest_reference_answer ({target_model}): {exc}", flush=True)
+        warnings.append(f"LLM gặp sự cố ({exc}), đã chuyển sang bản nháp tổng hợp cục bộ.")
         sample_answer, suggested_criteria = _build_fallback_draft(
             question=question,
             active_chunks=active_chunks,
@@ -297,4 +311,5 @@ def suggest_reference_answer(
             "llm_model": f"{target_model} (fallback)",
             "status": "ai_draft",
             "notice": HITL_NOTICE,
+            "warnings": warnings,
         }

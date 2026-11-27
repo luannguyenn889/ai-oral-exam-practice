@@ -23,11 +23,11 @@ describe('08 - Instructor Review Modal, Knowledge Gap Analytics & Admin Dashboar
     cy.wait('@getInstructorPracticeRecords');
 
     cy.contains('Nguyễn Văn Sinh Viên').should('be.visible');
-    cy.contains('button', /Rà soát|Chấm lại|Xem chi tiết/i)
+    cy.contains('button', /Xem chi tiết & Duyệt|Xem & Cập nhật/i)
       .first()
       .click();
 
-    cy.get('#review-score').should('be.visible').clear().type('9');
+    cy.get('#review-score').scrollIntoView().should('be.visible').clear().type('9');
     cy.contains('button', /Lưu|Chốt điểm/i).click();
     cy.wait('@reviewPracticeRecord');
 
