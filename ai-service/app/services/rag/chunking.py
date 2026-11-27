@@ -19,7 +19,7 @@ import sys
 from typing import Any, Callable, Optional
 
 from app.services.rag.embeddings import embed_texts as _embed_texts_impl
-from app.services.rag.embeddings import normalize_course_id
+from app.services.rag.embeddings import normalize_course_id, normalize_embedding_provider
 from app.services.rag.noise_filter import (
     apply_chunk_context_smoothing as _apply_chunk_context_smoothing,
     compute_noise_profile,
@@ -348,30 +348,110 @@ def chunk_text_semantic(
     return chunks
 
 
+def get_chunk_sizing_for_provider(embedding_provider: Optional[str] = None) -> tuple[int, int, int, int]:
+    """Trả về kích thước chunk tối ưu theo giới hạn token của từng embedding model.
+
+    Trả về `(rec_chunk_size, rec_overlap, sem_min_chars, sem_max_chars)`.
+    Riêng `local` (MiniLM-L12-v2) bị cắt cụt ở 128 token (~420-450 ký tự) nên cần đoạn ngắn hơn.
+    """
+    prov = normalize_embedding_provider(embedding_provider)
+    if prov == "local":
+        return (420, 75, 220, 440)
+    return (750, 140, 420, 1000)
+
+
+def _strip_section_header(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("["):
+        nl = cleaned.find("]\n")
+        if nl != -1:
+            return cleaned[nl + 2 :].strip()
+    return cleaned
+
+
+def _attach_page_numbers(
+    chunks: list[dict[str, Any]],
+    page_entries: Optional[list[tuple[int, str]]],
+) -> list[dict[str, Any]]:
+    """Ánh xạ gần đúng số trang/slide bắt đầu và kết thúc cho từng chunk theo thứ tự xuất hiện."""
+    if not chunks or not page_entries:
+        return chunks
+
+    normalized_pages = [
+        (page_num, re.sub(r"\s+", " ", page_text).strip())
+        for page_num, page_text in page_entries
+        if page_text and page_text.strip()
+    ]
+    if not normalized_pages:
+        return chunks
+
+    cursor = 0
+    total_pages = len(normalized_pages)
+    for chunk in chunks:
+        body = re.sub(r"\s+", " ", _strip_section_header(str(chunk.get("text", "")))).strip()
+        if len(body) < 20:
+            continue
+        head_probe = body[:48]
+        tail_probe = body[-48:] if len(body) >= 48 else head_probe
+
+        start_page: Optional[int] = None
+        end_page: Optional[int] = None
+        for idx in range(cursor, total_pages):
+            p_num, p_text = normalized_pages[idx]
+            if head_probe[:32] in p_text:
+                start_page = p_num
+                cursor = idx
+                break
+        if start_page is None:
+            for idx in range(0, total_pages):
+                p_num, p_text = normalized_pages[idx]
+                if head_probe[:28] in p_text:
+                    start_page = p_num
+                    cursor = idx
+                    break
+
+        if start_page is not None:
+            end_page = start_page
+            for idx in range(cursor, min(total_pages, cursor + 4)):
+                p_num, p_text = normalized_pages[idx]
+                if tail_probe[-32:] in p_text:
+                    end_page = p_num
+                    break
+            chunk["page_start"] = start_page
+            chunk["page_end"] = end_page
+
+    return chunks
+
+
 def chunk_text(
     text: str,
     source_name: str,
     course_id: str = "default",
-    chunk_size: int = 600,
-    overlap: int = 100,
+    chunk_size: Optional[int] = None,
+    overlap: Optional[int] = None,
     strategy: Optional[str] = None,
     embedding_provider: Optional[str] = None,
+    page_entries: Optional[list[tuple[int, str]]] = None,
 ) -> list[dict[str, Any]]:
-    """Điều phối chia văn bản theo chiến lược được chọn: recursive (mặc định), semantic, hoặc legacy."""
+    """Điều phối chia văn bản theo chiến lược được chọn và tự động khớp kích thước theo embedding model."""
     norm_strategy = normalize_chunking_strategy(strategy)
+    rec_size, rec_overlap, sem_min, sem_max = get_chunk_sizing_for_provider(embedding_provider)
+
     if norm_strategy == "legacy":
         raw_chunks = chunk_text_legacy(
             text=text,
             source_name=source_name,
             course_id=course_id,
-            chunk_size=chunk_size,
-            overlap=overlap,
+            chunk_size=chunk_size if chunk_size is not None else min(rec_size, 600),
+            overlap=overlap if overlap is not None else min(rec_overlap, 100),
         )
     elif norm_strategy == "semantic":
         raw_chunks = chunk_text_semantic(
             text=text,
             source_name=source_name,
             course_id=course_id,
+            min_chars=sem_min,
+            max_chars=chunk_size if chunk_size is not None else sem_max,
             embedding_provider=embedding_provider,
         )
     else:
@@ -379,5 +459,8 @@ def chunk_text(
             text=text,
             source_name=source_name,
             course_id=course_id,
+            chunk_size=chunk_size if chunk_size is not None else rec_size,
+            overlap=overlap if overlap is not None else rec_overlap,
         )
+    raw_chunks = _attach_page_numbers(raw_chunks, page_entries)
     return _apply_chunk_context_smoothing(raw_chunks)

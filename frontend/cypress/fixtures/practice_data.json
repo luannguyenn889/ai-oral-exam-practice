@@ -102,6 +102,7 @@
       "reviewedByInstructor": false,
       "createdAt": "2026-11-25T10:00:00Z",
       "updatedAt": "2026-11-25T10:05:00Z",
+      "evaluationJson": "{\"totalScore\":8.5,\"maxScore\":10,\"summary\":\"Sinh viên nắm chắc các pha cơ bản của mô hình Waterfall.\",\"criteria\":[{\"criterionId\":\"c1\",\"score\":5.5,\"maxScore\":6,\"evidence\":\"gồm phân tích yêu cầu, thiết kế, lập trình, kiểm thử và bảo trì\",\"missingOrIncorrect\":[],\"feedback\":\"Đầy đủ các giai đoạn chính.\"},{\"criterionId\":\"c2\",\"score\":3.0,\"maxScore\":4,\"evidence\":\"\",\"missingOrIncorrect\":[\"Chưa nêu nhược điểm khi yêu cầu thay đổi\"],\"feedback\":\"Cần bổ sung thêm nhược điểm.\"}],\"strengths\":[\"Trình bày mạch lạc đủ 5 pha\"],\"weaknesses\":[\"Thiếu phân tích hạn chế khi yêu cầu thay đổi\"],\"improvements\":[\"Nêu thêm ví dụ dự án phù hợp\"],\"uncertaintyNotes\":[],\"needsHumanReview\":false,\"ragReferences\":[],\"llmModel\":\"gemini-2.5-flash\",\"embeddingModel\":\"intfloat/multilingual-e5-small\",\"processingTimeMs\":950}",
       "evaluation": {
         "totalScore": 8.5,
         "maxScore": 10,

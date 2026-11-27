@@ -134,6 +134,16 @@
         <div class="rag-sync-banner__metrics">
           <span class="rag-sync-banner__pct">{{ syncPercent }}%</span>
           <span class="rag-sync-banner__timer">{{ formatElapsed(syncElapsedSeconds) }}</span>
+          <button
+            type="button"
+            class="btn btn--secondary btn--sm"
+            (click)="cancelSyncJob()"
+            [disabled]="isCancellingSync || !activeSyncJobId"
+            title="Hủy quá trình đồng bộ đang chạy"
+          >
+            <span class="material-symbols-outlined">stop_circle</span>
+            {{ isCancellingSync ? 'Đang hủy...' : 'Hủy' }}
+          </button>
         </div>
       </div>
       <div class="rag-sync-banner__bar">
@@ -227,14 +237,14 @@
         Tải lên &amp; Xử lý trực tiếp tại Server
       </h2>
       <p class="section-desc">
-        Tải tệp giáo trình (<code>.pdf</code>, <code>.docx</code>, <code>.txt</code>) trực tiếp lên
+        Tải tệp giáo trình (<code>.pdf</code>, <code>.docx</code>, <code>.pptx</code>, <code>.txt</code>) trực tiếp lên
         server hệ thống để lập chỉ mục RAG và mở đọc ngay không qua trung gian.
       </p>
 
       <input
         #localFileInput
         type="file"
-        accept=".pdf,.docx,.txt"
+        accept=".pdf,.docx,.pptx,.txt"
         multiple
         style="display: none;"
         (change)="onLocalFileSelected($event)"

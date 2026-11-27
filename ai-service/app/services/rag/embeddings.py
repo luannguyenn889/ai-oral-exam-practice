@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 import warnings
 from typing import Any, Callable, Optional
 
@@ -30,6 +31,10 @@ os.environ.setdefault("OMP_NUM_THREADS", str(max(1, os.cpu_count() or 4)))
 
 EMBEDDING_PROVIDERS = ("local", "e5-small", "gemini")
 RERANKER_PROVIDERS = ("minilm", "bge-m3")
+
+
+class IndexingCancelledError(Exception):
+    """Ngoại lệ báo hiệu tác vụ lập chỉ mục đã được người dùng hủy an toàn."""
 
 _embedding_models: dict[str, Any] = {}
 _embedding_lock = threading.Lock()
@@ -53,7 +58,35 @@ FILLER_PATTERNS = [
 
 def normalize_course_id(course_id: Optional[str]) -> str:
     cleaned = "".join(c for c in (course_id or "default").strip() if c.isalnum() or c in ("-", "_"))
-    return cleaned or "default"
+    if not cleaned or cleaned.lower() == "default":
+        return "default"
+    return cleaned.upper()
+
+
+def _strip_vietnamese_accents(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text)
+    stripped = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    return stripped.replace("đ", "d").replace("Đ", "D")
+
+
+def is_rerank_score_relevant(score: float, provider: Optional[str] = None) -> bool:
+    """Kiểm tra điểm Cross-Encoder có vượt ngưỡng liên quan theo từng họ reranker."""
+    prov = normalize_reranker_provider(provider)
+    if prov == "bge-m3":
+        thr = float(getattr(settings, "rag_min_rerank_score", 0.03))
+        return score >= thr
+    thr = float(getattr(settings, "rag_min_minilm_rerank_score", -4.5))
+    return score >= thr
+
+
+def get_min_dense_similarity(provider: Optional[str] = None) -> float:
+    """Ngưỡng Cosine Similarity tối thiểu tham chiếu theo đặc trưng từng không gian embedding."""
+    prov = normalize_embedding_provider(provider)
+    if prov == "e5-small":
+        return float(getattr(settings, "rag_min_dense_sim_e5", 0.76))
+    if prov == "gemini":
+        return float(getattr(settings, "rag_min_dense_sim_gemini", 0.52))
+    return float(getattr(settings, "rag_min_dense_sim_local", 0.35))
 
 
 def normalize_embedding_provider(provider: Optional[str] = None) -> str:
@@ -101,18 +134,50 @@ def clean_oral_query(text: str) -> str:
     return cleaned if len(cleaned) > 5 else text.strip()
 
 
+_BM25_STOPWORDS = frozenset(
+    {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "of", "to", "in", "for", "on", "with", "that", "this", "these", "those",
+        "as", "by", "from", "which", "and", "or", "not", "if", "when", "where",
+        "là", "của", "và", "các", "những", "trong", "cho", "được", "có", "một",
+        "để", "với", "khi", "này", "đó", "về", "từ", "theo", "như", "tại",
+        "thì", "mà", "nhưng", "nên", "nếu", "vì", "do", "bởi", "nào", "thế",
+        "sao", "vậy", "gì", "cách", "làm", "nói", "rằng", "hãy", "trên", "dưới",
+    }
+)
+
+
 def tokenize_text(text: str) -> list[str]:
-    """Tách từ đơn giản cho BM25 (hỗ trợ cả tiếng Việt và thuật ngữ CNTT)."""
+    """Tách từ cho BM25: lọc hư từ phổ biến, giữ có dấu + bản không dấu tiếng Việt và tách từ ghép '-'/'_'."""
     if not text:
         return []
-    return re.findall(r"\b\w+\b", text.lower())
+    raw_tokens = re.findall(r"[A-Za-zÀ-ỹ0-9]+(?:[-_][A-Za-zÀ-ỹ0-9]+)*", text.lower())
+    tokens: list[str] = []
+    for tok in raw_tokens:
+        if not tok or tok in _BM25_STOPWORDS:
+            continue
+        tokens.append(tok)
+        if "-" in tok or "_" in tok:
+            for part in re.split(r"[-_]+", tok):
+                if len(part) >= 2 and part not in _BM25_STOPWORDS:
+                    tokens.append(part)
+                    folded_part = _strip_vietnamese_accents(part)
+                    if folded_part and folded_part != part:
+                        tokens.append(folded_part)
+        folded = _strip_vietnamese_accents(tok)
+        if folded and folded != tok:
+            tokens.append(folded)
+    return tokens
 
 
 def _can_use_onnx_backend() -> bool:
-    return (
-        importlib.util.find_spec("onnxruntime") is not None
-        and importlib.util.find_spec("optimum.onnxruntime") is not None
-    )
+    try:
+        return (
+            importlib.util.find_spec("onnxruntime") is not None
+            and importlib.util.find_spec("optimum.onnxruntime") is not None
+        )
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def _load_sentence_transformer(target_name: str, backend: str = "torch", device: str = "cpu") -> Any:
@@ -187,10 +252,13 @@ def embed_texts(
     task: str = "document",
     provider: Optional[str] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> list[list[float]]:
     """Create normalized vectors locally (ONNX/CUDA, batch 64) or via parallel multi-key Gemini embeddings."""
     if not texts:
         return []
+    if cancel_event is not None and cancel_event.is_set():
+        raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
     total_texts = len(texts)
     prov = normalize_embedding_provider(provider)
     if prov in ("local", "e5-small"):
@@ -211,6 +279,8 @@ def embed_texts(
 
         vectors: list[list[float]] = []
         for start in range(0, total_texts, batch_size):
+            if cancel_event is not None and cancel_event.is_set():
+                raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
             batch_inputs = inputs[start : start + batch_size]
             batch_vecs = model.encode(
                 batch_inputs,
@@ -230,12 +300,16 @@ def embed_texts(
     batches = [texts[start : start + batch_size] for start in range(0, total_texts, batch_size)]
 
     def _embed_batch(batch_texts: list[str]) -> list[list[float]]:
+        if cancel_event is not None and cancel_event.is_set():
+            raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
         contents = [
             types.Content(parts=[types.Part.from_text(text=f"{prefix}{text}")])
             for text in batch_texts
         ]
         max_retries = 3
         for attempt in range(max_retries + 1):
+            if cancel_event is not None and cancel_event.is_set():
+                raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
             try:
                 response = run_with_gemini_client(
                     lambda client: client.models.embed_content(
@@ -248,8 +322,14 @@ def embed_texts(
                     missing_key_message="Chưa cấu hình GEMINI_API_KEY / GEMINI_API_KEYS trong file .env để dùng Gemini Embedding.",
                 )
                 if len(batches) > 1:
-                    time.sleep(0.25)
+                    if cancel_event is not None:
+                        if cancel_event.wait(0.25):
+                            raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
+                    else:
+                        time.sleep(0.25)
                 return [list(embedding.values) for embedding in (response.embeddings or [])]
+            except IndexingCancelledError:
+                raise
             except Exception as exc:
                 msg = str(exc).lower()
                 is_rate_limit = any(
@@ -263,7 +343,11 @@ def embed_texts(
                     f"[AI-SERVICE] Gemini Embedding cham han muc tam thoi, cho {wait_sec}s roi thu lai ({attempt + 1}/{max_retries})...",
                     flush=True,
                 )
-                time.sleep(wait_sec)
+                if cancel_event is not None:
+                    if cancel_event.wait(wait_sec):
+                        raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy trong lúc chờ hạn mức.")
+                else:
+                    time.sleep(wait_sec)
         raise RuntimeError("Không thể tạo vector Gemini Embedding sau nhiều lần thử lại.")
 
     vectors = []
@@ -274,12 +358,16 @@ def embed_texts(
     if max_workers > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for batch_vectors in executor.map(_embed_batch, batches):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
                 vectors.extend(batch_vectors)
                 done_count += len(batch_vectors)
                 if progress_callback is not None:
                     progress_callback(min(done_count, total_texts), total_texts)
     else:
         for batch in batches:
+            if cancel_event is not None and cancel_event.is_set():
+                raise IndexingCancelledError("Tác vụ lập chỉ mục đã bị hủy.")
             batch_vectors = _embed_batch(batch)
             vectors.extend(batch_vectors)
             done_count += len(batch_vectors)

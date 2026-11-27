@@ -34,6 +34,10 @@ class RagConfig(BaseModel):
         default=None,
         description="Ghi đè mô hình rerank ('minilm' hoặc 'bge-m3'); nếu để trống sẽ dùng cấu hình của học phần",
     )
+    expand_neighbors: bool = Field(
+        default=True,
+        description="Mở rộng ngữ cảnh với đoạn liền kề cùng mục trong ngữ cảnh gửi cho LLM",
+    )
 
 
 class EvaluationRequest(BaseModel):

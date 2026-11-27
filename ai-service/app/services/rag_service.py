@@ -63,8 +63,10 @@ from app.services.rag.extractors import (
     _clean_pdf_pages,
     _detect_docx_heading_level,
     _normalize_pdf_margin_line,
+    extract_document_with_pages,
     extract_text_from_docx,
     extract_text_from_pdf,
+    extract_text_from_pptx,
     extract_text_from_txt,
 )
 from app.services.rag.folders import (
@@ -89,6 +91,7 @@ from app.services.rag.store import (
     warmup_rag_background,
 )
 from app.services.rag.jobs import (
+    cancel_index_job,
     get_active_index_job,
     get_index_job,
     start_index_job,
@@ -102,6 +105,7 @@ __all__ = [
     "DEFAULT_CHUNKING_STRATEGY",
     "EMBEDDING_PROVIDERS",
     "FILLER_PATTERNS",
+    "cancel_index_job",
     "chunk_text",
     "chunk_text_legacy",
     "chunk_text_recursive",
@@ -111,8 +115,10 @@ __all__ = [
     "delete_course_rag_config",
     "embed_texts",
     "ensure_course_folder",
+    "extract_document_with_pages",
     "extract_text_from_docx",
     "extract_text_from_pdf",
+    "extract_text_from_pptx",
     "extract_text_from_txt",
     "format_rag_context",
     "get_active_embedding_name",

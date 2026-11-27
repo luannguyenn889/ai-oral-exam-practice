@@ -54,7 +54,8 @@ def _purge_course_vectors(course_keys: list[Optional[str]]) -> int:
                 existing = collection.get(where={"course_id": key}, include=[])
                 ids = existing.get("ids", []) if existing else []
                 if ids:
-                    collection.delete(ids=ids)
+                    for start in range(0, len(ids), 500):
+                        collection.delete(ids=ids[start : start + 500])
                     removed_count += len(ids)
             except Exception:
                 continue

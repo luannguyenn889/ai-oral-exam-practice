@@ -20,7 +20,11 @@ from app.services.rag.course_config import (
     resolve_course_embedding_provider,
     set_course_rag_config,
 )
-from app.services.rag.embeddings import normalize_course_id, normalize_embedding_provider
+from app.services.rag.embeddings import (
+    IndexingCancelledError,
+    normalize_course_id,
+    normalize_embedding_provider,
+)
 from app.services.rag.store import index_documents
 
 _jobs_lock = threading.Lock()
@@ -34,7 +38,7 @@ def _prune_old_jobs_locked() -> None:
     completed_ids = [
         jid
         for jid, job in sorted(_jobs.items(), key=lambda item: item[1].get("started_ts", 0.0))
-        if job.get("status") in ("completed", "failed")
+        if job.get("status") in ("completed", "failed", "cancelled")
     ]
     while len(_jobs) > _MAX_RETAINED_JOBS and completed_ids:
         _jobs.pop(completed_ids.pop(0), None)
@@ -121,6 +125,7 @@ def start_index_job(
             ):
                 return _snapshot_job(existing)
 
+        cancel_event = threading.Event()
         job_id = f"rag-job-{uuid.uuid4().hex[:10]}"
         now_ts = time.monotonic()
         job: dict[str, Any] = {
@@ -141,6 +146,7 @@ def start_index_job(
             "finished_ts": None,
             "result": None,
             "error": None,
+            "cancel_event": cancel_event,
         }
         _jobs[job_id] = job
         _prune_old_jobs_locked()
@@ -149,7 +155,9 @@ def start_index_job(
     def _on_progress(update: dict[str, Any]) -> None:
         with _jobs_lock:
             current = _jobs.get(job_id)
-            if not current or current.get("status") in ("completed", "failed"):
+            if not current or current.get("status") in ("completed", "failed", "cancelled"):
+                return
+            if current.get("phase") == "cancelling":
                 return
             for key in (
                 "phase",
@@ -172,6 +180,7 @@ def start_index_job(
                 embedding_provider=norm_provider,
                 chunking_strategy=norm_strategy,
                 progress_callback=_on_progress,
+                cancel_event=cancel_event,
             )
             with _jobs_lock:
                 current = _jobs.get(job_id)
@@ -185,6 +194,14 @@ def start_index_job(
                         f"Đã hoàn tất đồng bộ {res.get('total_chunks', 0)} đoạn từ "
                         f"{res.get('total_files', 0)} tài liệu."
                     )
+        except IndexingCancelledError:
+            with _jobs_lock:
+                current = _jobs.get(job_id)
+                if current:
+                    current["status"] = "cancelled"
+                    current["phase"] = "cancelled"
+                    current["finished_ts"] = time.monotonic()
+                    current["message"] = "Đã hủy tác vụ lập chỉ mục theo yêu cầu."
         except Exception as exc:
             with _jobs_lock:
                 current = _jobs.get(job_id)
@@ -198,3 +215,19 @@ def start_index_job(
     worker = threading.Thread(target=_worker, name=f"rag-index-{job_id}", daemon=True)
     worker.start()
     return initial_snapshot
+
+
+def cancel_index_job(job_id: str) -> Optional[dict[str, Any]]:
+    """Gửi tín hiệu hủy mềm cho job lập chỉ mục đang chạy."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return None
+        if job.get("status") in ("completed", "failed", "cancelled"):
+            return _snapshot_job(job)
+        ev = job.get("cancel_event")
+        if isinstance(ev, threading.Event):
+            ev.set()
+        job["phase"] = "cancelling"
+        job["message"] = "Đang hủy tác vụ lập chỉ mục..."
+        return _snapshot_job(job)

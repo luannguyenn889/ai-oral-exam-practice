@@ -37,12 +37,13 @@ class RagIndexResponse(BaseModel):
     total_chunks: int
     embedding_model: str
     chunking_strategy: str = "recursive"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class RagIndexJobResponse(BaseModel):
     job_id: str
     course_id: str
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     phase: str = "queued"
     percent: int = Field(default=0, ge=0, le=100)
     message: str = ""
@@ -75,6 +76,9 @@ class RagSearchRequest(BaseModel):
     reranker_provider: Optional[RerankerProvider] = Field(
         default=None, description="Ghi đè reranker ('minilm' hoặc 'bge-m3')"
     )
+    expand_neighbors: bool = Field(
+        default=False, description="Mở rộng ngữ cảnh sang chunk liền kề cùng mục trong formatted_context"
+    )
 
 
 class RagChunkResult(BaseModel):
@@ -89,6 +93,8 @@ class RagChunkResult(BaseModel):
     rrf_score: float = 0.0
     rerank_score: Optional[float] = None
     method: str = "Hybrid RRF"
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
 
 
 class RagSearchResponse(BaseModel):
@@ -107,13 +113,16 @@ class RagStatusResponse(BaseModel):
     total_chunks: int
     total_files: int
     files: list[str]
-    embedding_provider: str = "local"
+    embedding_provider: str = "e5-small"
     embedding_model: str
-    reranker_provider: str = "minilm"
+    reranker_provider: str = "bge-m3"
     reranker_model: str
     chunking_strategy: str = "recursive"
     hybrid_bm25_active: bool
     reranker_enabled_by_default: bool = False
+    needs_reindex: bool = False
+    outdated_chunks: int = 0
+    warnings: list[str] = Field(default_factory=list)
     search_modes_available: list[str]
     features: list[str]
     error: Optional[str] = None
@@ -184,12 +193,13 @@ class RagSuggestAnswerResponse(BaseModel):
     suggested_criteria: list[SuggestedRubricCriterion] = Field(default_factory=list)
     rag_references: list[RagChunkResult] = Field(default_factory=list)
     used_chunk_ids: list[str] = Field(default_factory=list)
-    embedding_provider: str = "local"
+    embedding_provider: str = "e5-small"
     embedding_model: str = ""
-    reranker_provider: str = "minilm"
+    reranker_provider: str = "bge-m3"
     reranker_model: str = ""
     llm_model: str
     status: Literal["ai_draft"] = "ai_draft"
     notice: str
+    warnings: list[str] = Field(default_factory=list)
 
 
